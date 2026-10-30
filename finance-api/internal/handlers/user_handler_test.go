@@ -32,6 +32,16 @@ func TestCreateUser(t *testing.T) {
 }
 
 func TestCreateUserErrors(t *testing.T) {
+	// Pre-create user to test duplicate email collision
+	existingEmail := fmt.Sprintf("existing_%d@example.com", time.Now().UnixNano())
+	apitest.New().
+		Handler(router).
+		Post("/api/v1/users").
+		JSON(fmt.Sprintf(`{"email":"%s","password":"password123"}`, existingEmail)).
+		Expect(t).
+		Status(http.StatusCreated).
+		End()
+
 	tests := []struct {
 		name       string
 		body       string
@@ -64,7 +74,7 @@ func TestCreateUserErrors(t *testing.T) {
 		},
 		{
 			name:       "duplicate email",
-			body:       `{"email":"existing@example.com","password":"password123"}`,
+			body:       fmt.Sprintf(`{"email":"%s","password":"password123"}`, existingEmail),
 			statusCode: http.StatusConflict,
 		},
 	}
@@ -171,12 +181,12 @@ func TestGetUserAccounts(t *testing.T) {
 }
 
 func TestGetUserAccountsErrors(t *testing.T) {
-	t.Run("invalid user ID", func(t *testing.T) {
+	t.Run("unauthorized without token", func(t *testing.T) {
 		apitest.New().
 			Handler(router).
-			Get("/api/v1/users/not-a-uuid/accounts").
+			Get("/api/v1/accounts").
 			Expect(t).
-			Status(http.StatusBadRequest).
+			Status(http.StatusUnauthorized).
 			End()
 	})
 }

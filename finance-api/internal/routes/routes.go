@@ -39,7 +39,7 @@ func Register(r *gin.Engine, cfg *config.Config) {
 		accounts.GET("", handlers.GetUserAccounts)
 		// accounts.GET("/:id", handlers.GetAccount)
 		// accounts.PATCH("/:id", handlers.UpdateAccount)
-		// accounts.DELETE("/:id", handlers.DeleteAccount)
+		accounts.DELETE("/:id", handlers.DeleteAccount)
 
 		accounts.GET("/:id/transactions", handlers.GetAccountTransactions)
 
@@ -53,6 +53,6 @@ func Register(r *gin.Engine, cfg *config.Config) {
 		transactions.POST("", handlers.CreateTransaction)
 		// transactions.GET("", handlers.GetTransactions)
 		// transactions.GET("/:id", handlers.GetTransaction)
-		// transactions.DELETE("/:id", handlers.DeleteTransaction)
+		transactions.DELETE("/:id", handlers.DeleteTransaction)
 	}
 }

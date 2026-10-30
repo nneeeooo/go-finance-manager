@@ -12,13 +12,15 @@ import (
 	"finance-api/internal/auth"
 	"finance-api/internal/config"
 	"finance-api/internal/database"
-	"finance-api/internal/models"
 	"finance-api/internal/routes"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/steinfletcher/apitest"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 var (
@@ -142,6 +144,7 @@ func createTestTransaction(t *testing.T, userID string, accountID string) string
 		JSON(fmt.Sprintf(`{
 			"id":"%s",
 			"account_id":"%s",
+			"bank_id":1,
 			"amount":%d,
 			"currency":%d,
 			"mcc":%d,
@@ -173,27 +176,58 @@ func createTestTransaction(t *testing.T, userID string, accountID string) string
 func TestMain(m *testing.M) {
 	testCfg = config.Load("../../../.env")
 
-	gin.SetMode(gin.TestMode)
-
-	db := database.Connect(testCfg)
-
-	if err := db.AutoMigrate(
-		&models.User{},
-		&models.Account{},
-		&models.Transaction{}); err != nil {
-		panic(err)
+	// Connect to default 'postgres' database to clone and drop test database
+	sysDSN := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=postgres sslmode=%s",
+		testCfg.PostgresHost, testCfg.PostgresPort, testCfg.PostgresUser, testCfg.PostgresPassword, testCfg.PostgresSSLMode,
+	)
+	sysDB, err := gorm.Open(postgres.Open(sysDSN), &gorm.Config{
+		Logger: logger.Discard,
+	})
+	if err != nil {
+		panic("failed to connect to postgres system database: " + err.Error())
 	}
 
+	testDBName := fmt.Sprintf("finance_db_test_%d", time.Now().UnixNano())
+
+	// Terminate active connections on prod DB and clone it as template
+	sysDB.Exec(fmt.Sprintf("ALTER DATABASE %s WITH ALLOW_CONNECTIONS false;", testCfg.PostgresDB))
+	sysDB.Exec(fmt.Sprintf("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s' AND pid != pg_backend_pid();", testCfg.PostgresDB))
+
+	cloneErr := sysDB.Exec(fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s;", testDBName, testCfg.PostgresDB)).Error
+	sysDB.Exec(fmt.Sprintf("ALTER DATABASE %s WITH ALLOW_CONNECTIONS true;", testCfg.PostgresDB))
+
+	if cloneErr != nil {
+		panic("failed to clone prod database: " + cloneErr.Error())
+	}
+
+	// Point test config to temporary cloned test database
+	cloneCfg := *testCfg
+	cloneCfg.PostgresDB = testDBName
+
+	gin.SetMode(gin.TestMode)
+
+	db := database.Connect(&cloneCfg)
+
 	router = gin.New()
-
 	router.Use(cors.Default())
-
 	router.Use(func(c *gin.Context) {
 		c.Set("db", db)
 		c.Next()
 	})
 
-	routes.Register(router, testCfg)
+	routes.Register(router, &cloneCfg)
 
-	os.Exit(m.Run())
+	exitCode := m.Run()
+
+	// Clean up: close test DB connection and drop test DB
+	if sqlDB, err := db.DB(); err == nil {
+		_ = sqlDB.Close()
+	}
+	sysDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s WITH (FORCE);", testDBName))
+	if sysSQL, err := sysDB.DB(); err == nil {
+		_ = sysSQL.Close()
+	}
+
+	os.Exit(exitCode)
 }

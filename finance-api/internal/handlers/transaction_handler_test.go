@@ -47,6 +47,7 @@ func TestCreateTransaction(t *testing.T) {
 		JSON(fmt.Sprintf(`{
 			"id":"%s",
 			"account_id":"%s",
+			"bank_id":1,
 			"amount":%d,
 			"currency":%d,
 			"mcc":%d,
@@ -84,6 +85,7 @@ func TestCreateTransactionErrors(t *testing.T) {
 			name: "missing id",
 			body: fmt.Sprintf(`{
 				"account_id":"%s",
+				"bank_id":1,
 				"amount":15000,
 				"currency":980,
 				"mcc":5411,
@@ -96,6 +98,7 @@ func TestCreateTransactionErrors(t *testing.T) {
 			name: "missing account id",
 			body: fmt.Sprintf(`{
 				"id":"%s",
+				"bank_id":1,
 				"amount":15000,
 				"currency":980,
 				"mcc":5411,
@@ -112,6 +115,7 @@ func TestCreateTransactionErrors(t *testing.T) {
 			body: fmt.Sprintf(`{
 				"id":"%s",
 				"account_id":"%s",
+				"bank_id":1,
 				"currency":980,
 				"mcc":5411,
 				"description":"Test transaction",
@@ -128,6 +132,7 @@ func TestCreateTransactionErrors(t *testing.T) {
 			body: fmt.Sprintf(`{
 				"id":"%s",
 				"account_id":"not-a-uuid",
+				"bank_id":1,
 				"amount":15000,
 				"currency":980,
 				"mcc":5411,
@@ -144,6 +149,7 @@ func TestCreateTransactionErrors(t *testing.T) {
 			body: fmt.Sprintf(`{
 				"id":"not-a-uuid",
 				"account_id":"%s",
+				"bank_id":1,
 				"amount":15000,
 				"currency":980,
 				"mcc":5411,
@@ -160,6 +166,7 @@ func TestCreateTransactionErrors(t *testing.T) {
 			body: fmt.Sprintf(`{
 				"id":"%s",
 				"account_id":"%s",
+				"bank_id":1,
 				"amount":15000,
 				"currency":980,
 				"mcc":5411,
@@ -185,8 +192,6 @@ func TestCreateTransactionErrors(t *testing.T) {
 		})
 	}
 }
-
-// TODO: write test to check duplicate transactions import
 
 func TestGetUserTransactions(t *testing.T) {
 	userID := createTestUser(t)
@@ -228,12 +233,12 @@ func TestGetUserTransactions(t *testing.T) {
 }
 
 func TestGetUserTransactionsErrors(t *testing.T) {
-	t.Run("invalid user id", func(t *testing.T) {
+	t.Run("unauthorized without token", func(t *testing.T) {
 		apitest.New().
 			Handler(router).
-			Get("/api/v1/users/not-a-uuid/transactions").
+			Get("/api/v1/transactions").
 			Expect(t).
-			Status(http.StatusBadRequest).
+			Status(http.StatusUnauthorized).
 			End()
 	})
 }
@@ -246,16 +251,20 @@ func TestDeleteTransaction(t *testing.T) {
 	apitest.New().
 		Handler(router).
 		Delete("/api/v1/transactions/" + transactionID).
+		Header("Authorization", authHeaderForUser(t, userID)).
 		Expect(t).
 		Status(http.StatusNoContent).
 		End()
 }
 
 func TestDeleteTransactionErrors(t *testing.T) {
+	userID := createTestUser(t)
+
 	t.Run("invalid transaction ID", func(t *testing.T) {
 		apitest.New().
 			Handler(router).
 			Delete("/api/v1/transactions/not-a-uuid").
+			Header("Authorization", authHeaderForUser(t, userID)).
 			Expect(t).
 			Status(http.StatusBadRequest).
 			End()
@@ -267,6 +276,7 @@ func TestDeleteTransactionErrors(t *testing.T) {
 		apitest.New().
 			Handler(router).
 			Delete("/api/v1/transactions/" + transactionID.String()).
+			Header("Authorization", authHeaderForUser(t, userID)).
 			Expect(t).
 			Status(http.StatusNotFound).
 			End()

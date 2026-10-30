@@ -7,7 +7,7 @@ import (
 )
 
 type CreateTransactionRequest struct {
-	ID                uuid.UUID `json:"id"`
+	ID                uuid.UUID `json:"id" validate:"required"`
 	AccountID         uuid.UUID `json:"account_id" validate:"required"`
 	BankID            uint16    `json:"bank_id" validate:"required"`
 	ExternalID        *string   `json:"external_id,omitempty"`

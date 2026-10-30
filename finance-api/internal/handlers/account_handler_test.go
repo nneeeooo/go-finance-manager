@@ -151,16 +151,20 @@ func TestDeleteAccount(t *testing.T) {
 	apitest.New().
 		Handler(router).
 		Delete("/api/v1/accounts/" + accountID).
+		Header("Authorization", authHeaderForUser(t, userID)).
 		Expect(t).
 		Status(http.StatusNoContent).
 		End()
 }
 
 func TestDeleteAccountErrors(t *testing.T) {
+	userID := createTestUser(t)
+
 	t.Run("invalid account ID", func(t *testing.T) {
 		apitest.New().
 			Handler(router).
 			Delete("/api/v1/accounts/not-a-uuid").
+			Header("Authorization", authHeaderForUser(t, userID)).
 			Expect(t).
 			Status(http.StatusBadRequest).
 			End()
@@ -172,6 +176,7 @@ func TestDeleteAccountErrors(t *testing.T) {
 		apitest.New().
 			Handler(router).
 			Delete("/api/v1/accounts/" + accountID.String()).
+			Header("Authorization", authHeaderForUser(t, userID)).
 			Expect(t).
 			Status(http.StatusNotFound).
 			End()
