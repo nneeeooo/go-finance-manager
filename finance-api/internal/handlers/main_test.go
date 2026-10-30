@@ -205,6 +205,7 @@ func TestMain(m *testing.M) {
 	// Point test config to temporary cloned test database
 	cloneCfg := *testCfg
 	cloneCfg.PostgresDB = testDBName
+	cloneCfg.GinMode = "test"
 
 	gin.SetMode(gin.TestMode)
 
