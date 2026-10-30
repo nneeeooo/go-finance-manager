@@ -51,9 +51,109 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	createSessionAndRespond(c, db, cfg, user.ID, http.StatusOK)
+}
+
+// Register godoc
+// @Summary Register user
+// @Description Registers a new whitelisted user and issues auth session.
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body auth_dto.RegisterRequest true "Register credentials"
+// @Success 201 {object} auth_dto.AccessTokenResponse
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 409 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /auth/register [post]
+func Register(c *gin.Context) {
+	var req auth_dto.RegisterRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request: " + err.Error(),
+		})
+		return
+	}
+
+	db := c.MustGet("db").(*gorm.DB)
+	cfg := c.MustGet("config").(*config.Config)
+
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+
+	// 1. Check whitelist in allowed_emails table
+	var allowed models.AllowedEmail
+	if err := db.Where("LOWER(email) = ?", email).First(&allowed).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "This email is not invited to register",
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to verify email whitelist",
+		})
+		return
+	}
+
+	// 2. Check if user already exists
+	var existingUser models.User
+	if err := db.Where("email = ?", email).First(&existingUser).Error; err == nil {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "User with this email already exists",
+		})
+		return
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to check existing user",
+		})
+		return
+	}
+
+	// 3. Hash password with Argon2id
+	passwordHash, err := utils.HashPassword(req.Password)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to process password",
+		})
+		return
+	}
+
+	user := models.User{
+		Email:        email,
+		PasswordHash: passwordHash,
+	}
+
+	// 4. Save user and update registered_at in transaction
+	now := time.Now()
+	err = db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Model(&allowed).Update("registered_at", &now).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to register user",
+		})
+		return
+	}
+
+	// 5. Auto-login (issue session)
+	createSessionAndRespond(c, db, cfg, user.ID, http.StatusCreated)
+}
+
+func createSessionAndRespond(c *gin.Context, db *gorm.DB, cfg *config.Config, userID uuid.UUID, statusCode int) {
 	// AT
 	accessToken, err := auth.GenerateAccessToken(
-		user.ID,
+		userID,
 		cfg.JWTSecret,
 	)
 	if err != nil {
@@ -88,7 +188,7 @@ func Login(c *gin.Context) {
 
 	familyItem := models.RefreshTokenFamily{
 		ID:     familyID,
-		UserID: user.ID,
+		UserID: userID,
 	}
 
 	refreshTokenItem := models.RefreshToken{
@@ -129,7 +229,7 @@ func Login(c *gin.Context) {
 		SameSite: http.SameSiteStrictMode,
 	})
 
-	c.JSON(http.StatusOK, auth_dto.AccessTokenResponse{
+	c.JSON(statusCode, auth_dto.AccessTokenResponse{
 		AccessToken: accessToken,
 		TokenType:   "Bearer",
 	})

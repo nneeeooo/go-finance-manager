@@ -6,14 +6,18 @@
 package main
 
 import (
+	"errors"
 	"finance-api/internal/config"
 	"finance-api/internal/database"
 	"finance-api/internal/models"
 	"finance-api/internal/routes"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	redoc "github.com/mvrilo/go-redoc"
 	ginredoc "github.com/mvrilo/go-redoc/gin"
@@ -31,8 +35,24 @@ func main() {
 		&models.Transaction{},
 		&models.RefreshTokenFamily{},
 		&models.RefreshToken{},
+		&models.AllowedEmail{},
 	); err != nil {
 		panic(err)
+	}
+
+	// Seed initial allowed emails if configured
+	if initialEmails := os.Getenv("ALLOWED_REGISTRATION_EMAILS"); initialEmails != "" {
+		for _, raw := range strings.Split(initialEmails, ",") {
+			email := strings.ToLower(strings.TrimSpace(raw))
+			if email != "" {
+				var existing models.AllowedEmail
+				if err := db.Where("LOWER(email) = ?", email).First(&existing).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+					_ = db.Create(&models.AllowedEmail{
+						Email: email,
+					})
+				}
+			}
+		}
 	}
 
 	r := gin.Default()

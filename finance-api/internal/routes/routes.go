@@ -14,10 +14,10 @@ func Register(r *gin.Engine, cfg *config.Config) {
 	// Auth
 	auth := api.Group("/auth")
 	{
+		auth.POST("/register", handlers.Register)
 		auth.POST("/login", handlers.Login)
 		auth.POST("/refresh", handlers.Refresh)
 		auth.POST("/logout", handlers.Logout)
-
 	}
 
 	// Users
