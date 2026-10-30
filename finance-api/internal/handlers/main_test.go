@@ -26,6 +26,7 @@ import (
 var (
 	router  *gin.Engine
 	testCfg *config.Config
+	testDB  *gorm.DB
 )
 
 func authHeaderForUser(t *testing.T, userID string) string {
@@ -208,11 +209,13 @@ func TestMain(m *testing.M) {
 	gin.SetMode(gin.TestMode)
 
 	db := database.Connect(&cloneCfg)
+	testDB = db
 
 	router = gin.New()
 	router.Use(cors.Default())
 	router.Use(func(c *gin.Context) {
 		c.Set("db", db)
+		c.Set("config", &cloneCfg)
 		c.Next()
 	})
 

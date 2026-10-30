@@ -282,3 +282,124 @@ func TestDeleteTransactionErrors(t *testing.T) {
 			End()
 	})
 }
+
+func TestDuplicateTransactionConflict(t *testing.T) {
+	userID := createTestUser(t)
+	accountID := createTestAccountForUser(t, userID)
+
+	txID := uuid.New()
+	occurredAt := time.Now().UTC().Format(time.RFC3339)
+
+	body := fmt.Sprintf(`{
+		"id":"%s",
+		"account_id":"%s",
+		"bank_id":1,
+		"amount":-4500,
+		"currency":980,
+		"mcc":5411,
+		"description":"Silpo supermarket",
+		"occurred_at":"%s"
+	}`, txID, accountID, occurredAt)
+
+	// First insert -> 201 Created
+	apitest.New().
+		Handler(router).
+		Post("/api/v1/transactions").
+		Header("Authorization", authHeaderForUser(t, userID)).
+		JSON(body).
+		Expect(t).
+		Status(http.StatusCreated).
+		End()
+
+	// Second insert with identical ID -> 409 Conflict
+	apitest.New().
+		Handler(router).
+		Post("/api/v1/transactions").
+		Header("Authorization", authHeaderForUser(t, userID)).
+		JSON(body).
+		Expect(t).
+		Status(http.StatusConflict).
+		End()
+}
+
+func TestTransactionSortingAndFieldsPreservation(t *testing.T) {
+	userID := createTestUser(t)
+	accountID := createTestAccountForUser(t, userID)
+
+	now := time.Now().UTC().Truncate(time.Second)
+
+	// Create 3 transactions at different timestamps
+	timestamps := []time.Time{
+		now.Add(-2 * time.Hour), // oldest
+		now.Add(-1 * time.Hour), // middle
+		now,                     // newest
+	}
+
+	for i, ts := range timestamps {
+		apitest.New().
+			Handler(router).
+			Post("/api/v1/transactions").
+			Header("Authorization", authHeaderForUser(t, userID)).
+			JSON(fmt.Sprintf(`{
+				"id":"%s",
+				"account_id":"%s",
+				"bank_id":2,
+				"amount":%d,
+				"currency":980,
+				"operation_amount":%d,
+				"operation_currency":980,
+				"balance":%d,
+				"cashback_amount":50,
+				"commission_rate":10,
+				"mcc":5411,
+				"category":"Groceries",
+				"description":"Tx %d",
+				"comment":"Test comment",
+				"hold":false,
+				"occurred_at":"%s"
+			}`, uuid.New(), accountID, (i+1)*1000, (i+1)*1000, 100000+(i*1000), i, ts.Format(time.RFC3339))).
+			Expect(t).
+			Status(http.StatusCreated).
+			End()
+	}
+
+	// Fetch all transactions -> must be ordered by occurred_at DESC
+	apitest.New().
+		Handler(router).
+		Get("/api/v1/transactions").
+		Header("Authorization", authHeaderForUser(t, userID)).
+		Expect(t).
+		Status(http.StatusOK).
+		Assert(func(res *http.Response, _ *http.Request) error {
+			var txs []dto.TransactionResponse
+			if err := json.NewDecoder(res.Body).Decode(&txs); err != nil {
+				return err
+			}
+			if len(txs) != 3 {
+				return fmt.Errorf("expected 3 transactions, got %d", len(txs))
+			}
+
+			// Verify DESC order: [0] newest, [1] middle, [2] oldest
+			if !txs[0].OccurredAt.After(txs[1].OccurredAt) || !txs[1].OccurredAt.After(txs[2].OccurredAt) {
+				return fmt.Errorf("transactions not ordered by occurred_at DESC: %v, %v, %v",
+					txs[0].OccurredAt, txs[1].OccurredAt, txs[2].OccurredAt)
+			}
+
+			// Verify fields preservation
+			newest := txs[0]
+			if newest.BankID != 2 {
+				return fmt.Errorf("expected BankID 2, got %d", newest.BankID)
+			}
+			if newest.Category != "Groceries" {
+				return fmt.Errorf("expected Category Groceries, got %s", newest.Category)
+			}
+			if newest.CashbackAmount != 50 {
+				return fmt.Errorf("expected CashbackAmount 50, got %d", newest.CashbackAmount)
+			}
+			if newest.CommissionRate != 10 {
+				return fmt.Errorf("expected CommissionRate 10, got %d", newest.CommissionRate)
+			}
+			return nil
+		}).
+		End()
+}

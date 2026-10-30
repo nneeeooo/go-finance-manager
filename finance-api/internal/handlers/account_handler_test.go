@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"encoding/json"
+	account_dto "finance-api/internal/dto/account"
 	transaction_dto "finance-api/internal/dto/transaction"
 	"fmt"
 	"io"
@@ -155,6 +156,59 @@ func TestDeleteAccount(t *testing.T) {
 		Expect(t).
 		Status(http.StatusNoContent).
 		End()
+
+	// Verify account is removed and not returned in list
+	apitest.New().
+		Handler(router).
+		Get("/api/v1/accounts").
+		Header("Authorization", authHeaderForUser(t, userID)).
+		Expect(t).
+		Status(http.StatusOK).
+		Assert(func(res *http.Response, _ *http.Request) error {
+			var accounts []account_dto.GetAccountResponse
+			if err := json.NewDecoder(res.Body).Decode(&accounts); err != nil {
+				return err
+			}
+			for _, acc := range accounts {
+				if acc.ID.String() == accountID {
+					return fmt.Errorf("deleted account %s still present in GET /accounts", accountID)
+				}
+			}
+			return nil
+		}).
+		End()
+}
+
+func TestCreateAccountsAllSupportedBanks(t *testing.T) {
+	userID := createTestUser(t)
+
+	banks := []struct {
+		id   int
+		name string
+	}{
+		{id: 1, name: "Monobank Black"},
+		{id: 2, name: "PrivatBank Universal"},
+		{id: 3, name: "PUMB Debit"},
+		{id: 4, name: "Sense Bank Caméléon"},
+	}
+
+	for _, b := range banks {
+		t.Run(b.name, func(t *testing.T) {
+			apitest.New().
+				Handler(router).
+				Post("/api/v1/accounts").
+				Header("Authorization", authHeaderForUser(t, userID)).
+				JSON(fmt.Sprintf(`{
+					"bank":%d,
+					"name":"%s",
+					"currency":980,
+					"balance":100000
+				}`, b.id, b.name)).
+				Expect(t).
+				Status(http.StatusCreated).
+				End()
+		})
+	}
 }
 
 func TestDeleteAccountErrors(t *testing.T) {
