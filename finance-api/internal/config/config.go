@@ -29,6 +29,7 @@ type Config struct {
 	MonobankRateLimitSeconds   int
 	MonobankHistoryStart       time.Time
 	MonobankMaxStatementWindow int
+	MonobankWebhookSecret      string
 }
 
 func Load(configPath string) *Config {
@@ -70,5 +71,6 @@ func Load(configPath string) *Config {
 		MonobankToken:              os.Getenv("MONOBANK_TOKEN"),
 		MonobankHistoryStart:       historyStart,
 		MonobankMaxStatementWindow: monobankMaxStatementWindow,
+		MonobankWebhookSecret:      os.Getenv("MONOBANK_WEBHOOK_SECRET"),
 	}
 }

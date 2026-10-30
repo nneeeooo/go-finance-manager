@@ -55,4 +55,11 @@ func Register(r *gin.Engine, cfg *config.Config) {
 		// transactions.GET("/:id", handlers.GetTransaction)
 		transactions.DELETE("/:id", handlers.DeleteTransaction)
 	}
+
+	// Webhooks
+	webhooks := api.Group("/webhooks")
+	{
+		webhooks.GET("/monobank", handlers.MonobankWebhookCheck)
+		webhooks.POST("/monobank", handlers.MonobankWebhookReceive)
+	}
 }

@@ -206,21 +206,22 @@ func TestMain(m *testing.M) {
 	cloneCfg := *testCfg
 	cloneCfg.PostgresDB = testDBName
 	cloneCfg.GinMode = "test"
+	testCfg = &cloneCfg
 
 	gin.SetMode(gin.TestMode)
 
-	db := database.Connect(&cloneCfg)
+	db := database.Connect(testCfg)
 	testDB = db
 
 	router = gin.New()
 	router.Use(cors.Default())
 	router.Use(func(c *gin.Context) {
 		c.Set("db", db)
-		c.Set("config", &cloneCfg)
+		c.Set("config", testCfg)
 		c.Next()
 	})
 
-	routes.Register(router, &cloneCfg)
+	routes.Register(router, testCfg)
 
 	exitCode := m.Run()
 
