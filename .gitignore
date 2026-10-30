@@ -12,6 +12,7 @@
 *.test
 bin/
 dist/
+tmp/
 coverage
 
 # Node & dependencies
