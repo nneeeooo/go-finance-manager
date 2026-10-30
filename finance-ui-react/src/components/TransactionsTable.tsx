@@ -13,13 +13,17 @@ import { useDashboardStore } from "@/stores/dashboard-store";
 import { useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
+import { filterTransactionsBySelection } from "@/lib/chart-utils";
+
 type Transaction = {
   id: string;
   account_id: string;
   bank_id: number;
+  external_id?: string;
   amount: number;
   currency: number;
   mcc: number;
+  category?: string;
   description: string;
   occurred_at: string;
 };
@@ -30,16 +34,14 @@ type TransactionsTableProps = {
 
 function TransactionsTable({ transactions }: TransactionsTableProps) {
   const bank = useDashboardStore((state) => state.bank);
+  const selectedAccountId = useDashboardStore((state) => state.selectedAccountId);
 
   const parentRef = useRef<HTMLDivElement>(null);
 
-  const filteredTransactions = useMemo(() => {
-    if (bank === "all") return transactions;
-
-    const bankId = bank === "monobank" ? 1 : 2;
-
-    return transactions.filter((transaction) => transaction.bank_id === bankId);
-  }, [transactions, bank]);
+  const filteredTransactions = useMemo(
+    () => filterTransactionsBySelection(transactions, bank, selectedAccountId),
+    [transactions, bank, selectedAccountId],
+  );
 
   const rowVirtualizer = useVirtualizer({
     count: filteredTransactions.length,
@@ -102,7 +104,9 @@ function TransactionsTable({ transactions }: TransactionsTableProps) {
                 >
                   <TableCell>
                     <div className="truncate">
-                      {mcc.get(transaction.mcc)?.irs_description ?? "Unknown"}
+                      {transaction.category ||
+                        mcc.get(transaction.mcc)?.irs_description ||
+                        "Unknown"}
                     </div>
                   </TableCell>
 

@@ -56,13 +56,28 @@ export function formatCurrency(amount: number): string {
   });
 }
 
+export function filterTransactionsBySelection(
+  transactions: Transaction[],
+  bank: BankFilter,
+  selectedAccountId: string = "all",
+): Transaction[] {
+  return transactions.filter((tx) => {
+    if (selectedAccountId !== "all") {
+      return tx.account_id === selectedAccountId;
+    }
+    if (bank !== "all") {
+      const targetBankId = bank === "monobank" ? 1 : 2;
+      return tx.bank_id === targetBankId;
+    }
+    return true;
+  });
+}
+
 export function filterTransactionsByBank(
   transactions: Transaction[],
   bank: BankFilter,
 ): Transaction[] {
-  if (bank === "all") return transactions;
-  const targetBankId = bank === "monobank" ? 1 : 2;
-  return transactions.filter((tx) => tx.bank_id === targetBankId);
+  return filterTransactionsBySelection(transactions, bank, "all");
 }
 
 export function getAvailableYears(transactions: Transaction[]): number[] {

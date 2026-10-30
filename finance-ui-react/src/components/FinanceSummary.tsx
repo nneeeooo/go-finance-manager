@@ -3,7 +3,7 @@ import { useDashboardStore } from "@/stores/dashboard-store";
 import type { Transaction } from "../types";
 import {
   calculateSummaryByCurrency,
-  filterTransactionsByBank,
+  filterTransactionsBySelection,
   formatCurrency,
 } from "@/lib/chart-utils";
 
@@ -13,10 +13,17 @@ type FinanceSummaryProps = {
 
 function FinanceSummary({ transactions }: FinanceSummaryProps) {
   const bank = useDashboardStore((state) => state.bank);
+  const selectedAccountId = useDashboardStore((state) => state.selectedAccountId);
+  const accounts = useDashboardStore((state) => state.accounts);
+
+  const selectedAccount = useMemo(
+    () => accounts.find((a) => a.id === selectedAccountId),
+    [accounts, selectedAccountId],
+  );
 
   const filteredTransactions = useMemo(
-    () => filterTransactionsByBank(transactions, bank),
-    [transactions, bank],
+    () => filterTransactionsBySelection(transactions, bank, selectedAccountId),
+    [transactions, bank, selectedAccountId],
   );
 
   const summaries = useMemo(
@@ -61,12 +68,14 @@ function FinanceSummary({ transactions }: FinanceSummaryProps) {
         <div className="mt-1 text-xl font-bold">
           {filteredTransactions.length.toLocaleString()}
         </div>
-        <div className="text-xs text-muted-foreground">
-          {bank === "all"
-            ? "All banks"
-            : bank === "monobank"
-              ? "Monobank"
-              : "PrivatBank"}
+        <div className="text-xs text-muted-foreground truncate max-w-44">
+          {selectedAccount
+            ? selectedAccount.name
+            : bank === "all"
+              ? "All accounts"
+              : bank === "monobank"
+                ? "Monobank (All)"
+                : "PrivatBank (All)"}
         </div>
       </div>
 

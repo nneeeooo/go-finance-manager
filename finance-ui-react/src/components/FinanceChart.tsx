@@ -20,7 +20,7 @@ import {
   PERIOD_MODE_ITEMS,
   calculateActivityChartData,
   calculateCategoryBreakdown,
-  filterTransactionsByBank,
+  filterTransactionsBySelection,
   filterTransactionsByPeriod,
   getAvailableYears,
   getPeriodDescription,
@@ -34,6 +34,9 @@ type FinanceChartProps = {
 export function FinanceChart({ transactions }: FinanceChartProps) {
   const bank = useDashboardStore((state) => state.bank);
   const setBank = useDashboardStore((state) => state.setBank);
+  const selectedAccountId = useDashboardStore((state) => state.selectedAccountId);
+  const setSelectedAccountId = useDashboardStore((state) => state.setSelectedAccountId);
+  const accounts = useDashboardStore((state) => state.accounts);
 
   const [activeTab, setActiveTab] = useState<string>("activity");
   const [mode, setMode] = useState<ChartMode>("all");
@@ -56,23 +59,39 @@ export function FinanceChart({ transactions }: FinanceChartProps) {
     [mode, effectiveYear, selectedMonth],
   );
 
-  const bankFilteredTransactions = useMemo(
-    () => filterTransactionsByBank(transactions, bank),
-    [transactions, bank],
+  const accountItems = useMemo(() => {
+    const base = [{ value: "all", label: "All Accounts" }];
+    const filteredAccounts =
+      bank === "all"
+        ? accounts
+        : accounts.filter((a) => (bank === "monobank" ? a.bank === 1 : a.bank === 2));
+
+    return [
+      ...base,
+      ...filteredAccounts.map((a) => ({
+        value: a.id,
+        label: a.name,
+      })),
+    ];
+  }, [accounts, bank]);
+
+  const selectedFilteredTransactions = useMemo(
+    () => filterTransactionsBySelection(transactions, bank, selectedAccountId),
+    [transactions, bank, selectedAccountId],
   );
 
   const activityData = useMemo(
-    () => calculateActivityChartData(bankFilteredTransactions, periodFilter),
-    [bankFilteredTransactions, periodFilter],
+    () => calculateActivityChartData(selectedFilteredTransactions, periodFilter),
+    [selectedFilteredTransactions, periodFilter],
   );
 
   const categoryData = useMemo(() => {
     const periodFiltered = filterTransactionsByPeriod(
-      bankFilteredTransactions,
+      selectedFilteredTransactions,
       periodFilter,
     );
     return calculateCategoryBreakdown(periodFiltered);
-  }, [bankFilteredTransactions, periodFilter]);
+  }, [selectedFilteredTransactions, periodFilter]);
 
   const periodDescription = getPeriodDescription(periodFilter);
 
@@ -117,6 +136,29 @@ export function FinanceChart({ transactions }: FinanceChartProps) {
                   <SelectGroup>
                     <SelectLabel>Bank</SelectLabel>
                     {BANK_ITEMS.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+
+              {/* Account filter */}
+              <Select
+                items={accountItems}
+                value={selectedAccountId}
+                onValueChange={(value) => {
+                  if (value) setSelectedAccountId(value as string);
+                }}
+              >
+                <SelectTrigger className="h-9 min-w-44">
+                  <SelectValue placeholder="Account" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectLabel>Account</SelectLabel>
+                    {accountItems.map((item) => (
                       <SelectItem key={item.value} value={item.value}>
                         {item.label}
                       </SelectItem>
