@@ -37,7 +37,7 @@ func Register(r *gin.Engine, cfg *config.Config) {
 	{
 		accounts.POST("", handlers.CreateAccount)
 		accounts.GET("", handlers.GetUserAccounts)
-		// accounts.GET("/:id", handlers.GetAccount)
+		accounts.GET("/:id", handlers.GetAccount)
 		// accounts.PATCH("/:id", handlers.UpdateAccount)
 		accounts.DELETE("/:id", handlers.DeleteAccount)
 

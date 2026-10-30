@@ -143,6 +143,66 @@ func TestGetAccountTransactionsErrors(t *testing.T) {
 			Status(http.StatusBadRequest).
 			End()
 	})
+
+	t.Run("account not found", func(t *testing.T) {
+		apitest.New().
+			Handler(router).
+			Get("/api/v1/accounts/" + uuid.New().String() + "/transactions").
+			Header("Authorization", authHeaderForUser(t, userID)).
+			Expect(t).
+			Status(http.StatusNotFound).
+			End()
+	})
+}
+
+func TestGetAccount(t *testing.T) {
+	userID := createTestUser(t)
+	accountID := createTestAccountForUser(t, userID)
+
+	apitest.New().
+		Handler(router).
+		Get("/api/v1/accounts/" + accountID).
+		Header("Authorization", authHeaderForUser(t, userID)).
+		Expect(t).
+		Status(http.StatusOK).
+		Assert(func(res *http.Response, _ *http.Request) error {
+			var resp account_dto.GetAccountResponse
+			if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
+				return err
+			}
+			if resp.ID.String() != accountID {
+				return fmt.Errorf("expected account ID %s, got %s", accountID, resp.ID)
+			}
+			if resp.Name != "Monobank" {
+				return fmt.Errorf("expected Name Monobank, got %s", resp.Name)
+			}
+			return nil
+		}).
+		End()
+}
+
+func TestGetAccountErrors(t *testing.T) {
+	userID := createTestUser(t)
+
+	t.Run("invalid account ID", func(t *testing.T) {
+		apitest.New().
+			Handler(router).
+			Get("/api/v1/accounts/not-a-uuid").
+			Header("Authorization", authHeaderForUser(t, userID)).
+			Expect(t).
+			Status(http.StatusBadRequest).
+			End()
+	})
+
+	t.Run("account not found", func(t *testing.T) {
+		apitest.New().
+			Handler(router).
+			Get("/api/v1/accounts/" + uuid.New().String()).
+			Header("Authorization", authHeaderForUser(t, userID)).
+			Expect(t).
+			Status(http.StatusNotFound).
+			End()
+	})
 }
 
 func TestDeleteAccount(t *testing.T) {

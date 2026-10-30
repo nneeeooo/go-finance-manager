@@ -87,7 +87,11 @@ func CreateAccount(c *gin.Context) {
 // @Failure 500 {object} map[string]string "Failed to get account"
 // @Router /accounts/{account_id} [get]
 func GetAccount(c *gin.Context) {
-	accountID, err := uuid.Parse(c.Param("account_id"))
+	idStr := c.Param("account_id")
+	if idStr == "" {
+		idStr = c.Param("id")
+	}
+	accountID, err := uuid.Parse(idStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Invalid account ID",
@@ -95,11 +99,12 @@ func GetAccount(c *gin.Context) {
 		return
 	}
 
+	userID := c.MustGet("user_id").(uuid.UUID)
 	db := c.MustGet("db").(*gorm.DB)
 
 	var account models.Account
 
-	if err := db.First(&account, "id = ?", accountID).Error; err != nil {
+	if err := db.First(&account, "id = ? AND user_id = ?", accountID, userID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"error": "Account not found",
