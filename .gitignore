@@ -1,0 +1,33 @@
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Binaries & build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+bin/
+dist/
+coverage
+
+# Node & dependencies
+node_modules/
+.npm/
+
+# Personal banking dumps & statements
+monobank_accounts.json
+accounts_*.json
+temp.json
+*.xlsx
+*.csv
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

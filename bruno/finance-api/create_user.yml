@@ -1,0 +1,22 @@
+info:
+  name: create_user
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: /users
+  body:
+    type: json
+    data: |-
+      {
+        "email": "d@gmail.com",
+        "password": "12345678"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

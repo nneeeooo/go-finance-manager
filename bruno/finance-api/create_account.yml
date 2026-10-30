@@ -1,0 +1,24 @@
+info:
+  name: create_account
+  type: http
+  seq: 4
+
+http:
+  method: POST
+  url: /accounts
+  body:
+    type: json
+    data: |-
+      {
+        "bank": 2,
+        "currency": 980,
+        "name": "Privatbank For Payouts",
+        "user_id": "019fe757-e2c3-7a17-a472-3a7f9bf9ff8a"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

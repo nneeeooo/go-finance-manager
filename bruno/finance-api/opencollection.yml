@@ -1,0 +1,32 @@
+opencollection: 1.0.0
+
+info:
+  name: finance-api
+config:
+  proxy:
+    inherit: true
+    config:
+      protocol: http
+      hostname: ""
+      port: ""
+      auth:
+        username: ""
+        password: ""
+      bypassProxy: ""
+
+request:
+  variables:
+    - name: baseUrl
+      value: "{{APP_HOST}}:{{APP_PORT}}"
+  scripts:
+    - type: before-request
+      code: req.setUrl(`{{baseUrl}}/api/v1${req.url}`)
+bundled: false
+extensions:
+  bruno:
+    ignore:
+      - node_modules
+      - .git
+    presets:
+      request:
+        type: http

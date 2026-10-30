@@ -1,0 +1,27 @@
+info:
+  name: create_transaction
+  type: http
+  seq: 4
+
+http:
+  method: POST
+  url: /transactions/
+  body:
+    type: json
+    data: |-
+      {
+        "user_id": "283e4011-4d39-4b7c-8a14-adc59dc1eba9",
+        "bank": "monobank",
+        "amount": 125000,
+        "currency": "UAH",
+        "category": "Groceries",
+        "date": "2026-08-02T12:30:00Z",
+        "description": "Weekly grocery shopping"
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

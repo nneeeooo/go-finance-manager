@@ -1,0 +1,14 @@
+[Unit]
+Description=Go Finance Manager UI (Nginx)
+After=finance-api.service
+Wants=finance-api.service
+
+[Container]
+Image=ghcr.io/nneeeooo/go-finance-manager-ui:latest
+ContainerName=finance-ui
+Network=db_net
+PublishPort=127.0.0.1:8085:80
+Pull=newer
+
+[Install]
+WantedBy=default.target

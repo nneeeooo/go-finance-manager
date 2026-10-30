@@ -1,0 +1,14 @@
+[Unit]
+Description=Go Finance Manager API
+After=postgres.service
+Wants=postgres.service
+
+[Container]
+Image=ghcr.io/nneeeooo/go-finance-manager-api:latest
+ContainerName=finance-api
+Network=db_net
+EnvironmentFile=%h/.config/finance/api.env
+Pull=newer
+
+[Install]
+WantedBy=default.target

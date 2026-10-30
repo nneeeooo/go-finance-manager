@@ -1,0 +1,8 @@
+name: Development
+variables:
+  - name: APP_HOST
+    value: http://localhost
+    description: ""
+  - name: APP_PORT
+    value: "8080"
+    description: ""
