@@ -46,12 +46,19 @@ func CreateAccount(c *gin.Context) {
 
 	userID := c.MustGet("user_id").(uuid.UUID)
 
+	externalID := req.ExternalID
+	if externalID == "" {
+		externalID = req.MonobankAccountID
+	}
+
 	account := models.Account{
 		UserID:            userID,
 		Bank:              req.Bank,
-		MonobankAccountID: req.MonobankAccountID,
+		ExternalID:        externalID,
+		MonobankAccountID: externalID,
 		Name:              req.Name,
 		Currency:          req.Currency,
+		Balance:           req.Balance,
 	}
 
 	db := c.MustGet("db").(*gorm.DB)
@@ -110,9 +117,11 @@ func GetAccount(c *gin.Context) {
 		ID:                account.ID,
 		UserID:            account.UserID,
 		Bank:              account.Bank,
-		MonobankAccountID: account.MonobankAccountID,
+		ExternalID:        account.ExternalID,
+		MonobankAccountID: account.ExternalID,
 		Name:              account.Name,
 		Currency:          account.Currency,
+		Balance:           account.Balance,
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -177,13 +186,22 @@ func GetAccountTransactions(c *gin.Context) {
 
 	for i, transaction := range transactions {
 		responses[i] = transaction_dto.TransactionResponse{
-			ID:          transaction.ID,
-			AccountID:   transaction.AccountID,
-			Amount:      transaction.Amount,
-			Currency:    transaction.Currency,
-			MCC:         transaction.MCC,
-			Description: transaction.Description,
-			OccurredAt:  transaction.OccurredAt,
+			ID:                transaction.ID,
+			AccountID:         transaction.AccountID,
+			BankID:            uint16(transaction.BankID),
+			ExternalID:        transaction.ExternalID,
+			Amount:            transaction.Amount,
+			OperationAmount:   transaction.OperationAmount,
+			OperationCurrency: transaction.OperationCurrency,
+			Balance:           transaction.Balance,
+			CashbackAmount:    transaction.CashbackAmount,
+			CommissionRate:    transaction.CommissionRate,
+			MCC:               transaction.MCC,
+			Category:          transaction.Category,
+			Description:       transaction.Description,
+			Comment:           transaction.Comment,
+			Hold:              transaction.Hold,
+			OccurredAt:        transaction.OccurredAt,
 		}
 	}
 

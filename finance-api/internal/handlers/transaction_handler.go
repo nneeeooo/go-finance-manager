@@ -65,14 +65,23 @@ func CreateTransaction(c *gin.Context) {
 	}
 
 	transaction := models.Transaction{
-		ID:          req.ID,
-		AccountID:   req.AccountID,
-		BankID:      models.Bank(req.BankID),
-		Amount:      req.Amount,
-		Currency:    req.Currency,
-		MCC:         req.MCC,
-		Description: req.Description,
-		OccurredAt:  req.OccurredAt,
+		ID:                req.ID,
+		AccountID:         req.AccountID,
+		BankID:            models.Bank(req.BankID),
+		ExternalID:        req.ExternalID,
+		Amount:            req.Amount,
+		Currency:          req.Currency,
+		OperationAmount:   req.OperationAmount,
+		OperationCurrency: req.OperationCurrency,
+		Balance:           req.Balance,
+		CashbackAmount:    req.CashbackAmount,
+		CommissionRate:    req.CommissionRate,
+		MCC:               req.MCC,
+		Category:          req.Category,
+		Description:       req.Description,
+		Comment:           req.Comment,
+		Hold:              req.Hold,
+		OccurredAt:        req.OccurredAt,
 	}
 
 	if err := db.Create(&transaction).Error; err != nil {
@@ -133,14 +142,23 @@ func GetUserTransactions(c *gin.Context) {
 
 	for i, t := range transactions {
 		responses[i] = transaction_dto.TransactionResponse{
-			ID:          t.ID,
-			AccountID:   t.AccountID,
-			BankID:      uint16(t.BankID),
-			Amount:      t.Amount,
-			Currency:    t.Currency,
-			MCC:         t.MCC,
-			Description: t.Description,
-			OccurredAt:  t.OccurredAt,
+			ID:                t.ID,
+			AccountID:         t.AccountID,
+			BankID:            uint16(t.BankID),
+			ExternalID:        t.ExternalID,
+			Amount:            t.Amount,
+			Currency:          t.Currency,
+			OperationAmount:   t.OperationAmount,
+			OperationCurrency: t.OperationCurrency,
+			Balance:           t.Balance,
+			CashbackAmount:    t.CashbackAmount,
+			CommissionRate:    t.CommissionRate,
+			MCC:               t.MCC,
+			Category:          t.Category,
+			Description:       t.Description,
+			Comment:           t.Comment,
+			Hold:              t.Hold,
+			OccurredAt:        t.OccurredAt,
 		}
 	}
 

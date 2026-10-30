@@ -2,11 +2,31 @@ export type Transaction = {
   id: string;
   account_id: string;
   bank_id: number;
+  external_id?: string;
   amount: number;
   currency: number;
+  operation_amount?: number;
+  operation_currency?: number;
+  balance?: number;
+  cashback_amount?: number;
+  commission_rate?: number;
   mcc: number;
+  category?: string;
   description: string;
+  comment?: string;
+  hold?: boolean;
   occurred_at: string;
+};
+
+export type Account = {
+  id: string;
+  userId: string;
+  bank: number;
+  external_id?: string;
+  monobank_account_id?: string;
+  name: string;
+  currency: number;
+  balance: number;
 };
 
 export type ChartMode = "all" | "quarters" | "months" | "days";
