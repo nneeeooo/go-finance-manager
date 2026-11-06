@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { AlertCircle, Ban, CheckCircle2, Clock, CloudDownload, CreditCard, Loader2, Search, Square } from "lucide-react";
+import { AlertCircle, Ban, CheckCircle2, Clock, CloudDownload, CreditCard, Loader2, RefreshCw, Search, Square } from "lucide-react";
 
 import { BankBadge } from "@/components/BankBadge";
 import { LoginRequired, PageHeader } from "@/components/PageHeader";
@@ -24,9 +24,9 @@ export const Route = createFileRoute("/import/monobank")({
 type Job = {
   account_id: string;
   status: "running" | "done" | "error" | "cancelled";
-  months: string[];
-  months_done: number;
-  current?: string;
+  windows: { from: number; to: number }[]; // unix seconds, newest first
+  windows_done: number;
+  calls: number;
   fetched: number;
   created: number;
   next_call_at?: string;
@@ -62,18 +62,19 @@ const cardName = (a: MonoAccount) => {
   return `${CARD_TYPES[a.type] ?? a.type}${pan ? ` ·${pan.slice(-4)}` : ""}`;
 };
 
-const MAX_MONTHS = 24;
+// Monobank: one statement call a minute, each for at most 31 days + 1 hour; the API cuts ranges the same way
+const WINDOW = 2682000;
+const MAX_WINDOWS = 24;
 const ym = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-const monthLabel = (s: string) => {
-  const [y, m] = s.split("-").map(Number);
-  const label = new Date(y, m - 1, 1).toLocaleDateString("uk-UA", { month: "long", year: "numeric" });
-  return label.charAt(0).toUpperCase() + label.slice(1); // "Листопад 2026 р.", not "Р."
-};
-const monthsBetween = (from: string, to: string) => {
+/** Calls a months range needs: from the first day of from to the end of to, never past now (browser time) */
+const callsFor = (from: string, to: string, now: Date) => {
   const [fy, fm] = from.split("-").map(Number);
   const [ty, tm] = to.split("-").map(Number);
-  return (ty - fy) * 12 + (tm - fm) + 1;
+  const start = new Date(fy, fm - 1, 1).getTime() / 1000;
+  const end = Math.min(new Date(ty, tm, 1).getTime() / 1000 - 1, now.getTime() / 1000);
+  return end < start ? 0 : Math.ceil((end - start + 1) / (WINDOW + 1));
 };
+const day = (unix: number) => new Date(unix * 1000).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "2-digit" });
 
 function MonobankImport() {
   const { account: preselected } = Route.useSearch();
@@ -91,11 +92,11 @@ function MonobankImport() {
   const [to, setTo] = useState(ym(now));
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"cards" | "start" | "cancel" | null>(null);
+  const [busy, setBusy] = useState<"cards" | "update" | "months" | "cancel" | null>(null);
   const [clock, setClock] = useState(() => Date.now()); // ticks the countdown while a fetch runs
 
   const card = cards?.find((c) => c.id === cardId);
-  const count = monthsBetween(from, to);
+  const count = callsFor(from, to, now);
   const running = job?.status === "running";
   const localName = (id?: string) => localAccounts.find((a) => a.id === id)?.name;
 
@@ -150,9 +151,10 @@ function MonobankImport() {
     setCardId(pick?.id ?? "");
   };
 
-  const start = async () => {
+  // update: since the newest saved operation (usually one call); months: the chosen range
+  const start = async (mode: "update" | "months") => {
     if (!card) return;
-    setBusy("start");
+    setBusy(mode);
     setError(null);
     // A card not yet among the user's accounts becomes one first
     let accountId = card.linked_account_id;
@@ -174,7 +176,7 @@ function MonobankImport() {
     const response = await apiFetch("/imports/monobank", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ account_id: accountId, token: token.trim(), from, to }),
+      body: JSON.stringify({ account_id: accountId, token: token.trim(), ...(mode === "months" ? { from, to } : {}) }),
     });
     setBusy(null);
     if (!response.ok) {
@@ -206,7 +208,7 @@ function MonobankImport() {
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pb-4">
       <PageHeader
         title="Fetch Monobank history"
-        description="Loads statements month by month. Monobank allows one request a minute, so a month takes about a minute."
+        description="Update pulls what is new since the last saved operation; history loads older months, 31 days per call."
       />
 
       <Card>
@@ -272,27 +274,42 @@ function MonobankImport() {
 
       <Card className={cn(!card && "opacity-60")}>
         <CardHeader>
-          <CardTitle>2. Months to fetch</CardTitle>
+          <CardTitle>2. Fetch</CardTitle>
           <CardDescription>
-            Already saved operations are updated, not duplicated. Live purchases arrive by webhook, so this is for history.
+            Monobank allows one call a minute, each for up to 31 days. Saved operations are updated, not duplicated.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="from">From</Label>
-            <Input id="from" type="month" required max={to} value={from} onChange={(e) => setFrom(e.target.value)} />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="to">To</Label>
-            <Input id="to" type="month" required min={from} max={ym(now)} value={to} onChange={(e) => setTo(e.target.value)} />
-          </div>
-          <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-            <Button onClick={start} disabled={busy !== null || running || !card || count < 1 || count > MAX_MONTHS}>
-              {busy === "start" ? <Loader2 className="animate-spin" /> : <CloudDownload />}
-              Fetch {count > 0 ? `${count} ${count === 1 ? "month" : "months"}` : ""}
+        <CardContent className="flex flex-col gap-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button onClick={() => start("update")} disabled={busy !== null || running || !card}>
+              {busy === "update" ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+              Update
             </Button>
-            {count > MAX_MONTHS && <span className="text-sm text-destructive">At most {MAX_MONTHS} months at once</span>}
-            {count >= 1 && count <= MAX_MONTHS && <span className="text-sm text-muted-foreground">about {count} min</span>}
+            <span className="text-sm text-muted-foreground">
+              New operations since the last saved one, plus 3 days back for holds. Usually one call.
+            </span>
+          </div>
+          <div className="grid gap-4 border-t pt-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="from">History from</Label>
+              <Input id="from" type="month" required max={to} value={from} onChange={(e) => setFrom(e.target.value)} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="to">To</Label>
+              <Input id="to" type="month" required min={from} max={ym(now)} value={to} onChange={(e) => setTo(e.target.value)} />
+            </div>
+            <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+              <Button variant="outline" onClick={() => start("months")} disabled={busy !== null || running || !card || count < 1 || count > MAX_WINDOWS}>
+                {busy === "months" ? <Loader2 className="animate-spin" /> : <CloudDownload />}
+                Fetch history
+              </Button>
+              {count > MAX_WINDOWS && <span className="text-sm text-destructive">About 2 years at most at once</span>}
+              {count >= 1 && count <= MAX_WINDOWS && (
+                <span className="text-sm text-muted-foreground">
+                  {count} {count === 1 ? "call" : "calls"}, about {count} min
+                </span>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -316,8 +333,7 @@ function MonobankImport() {
               {localName(job.account_id) && <span className="font-normal text-muted-foreground">· {localName(job.account_id)}</span>}
             </CardTitle>
             <CardDescription>
-              {job.fetched} operations fetched, {job.created} new
-              {job.status === "running" && job.current && ` · now ${monthLabel(job.current)}`}
+              {job.fetched} operations fetched, {job.created} new · {job.calls} {job.calls === 1 ? "call" : "calls"} to Monobank
               {job.status === "running" && wait > 0 && (
                 <span className="ml-2 inline-flex items-center gap-1">
                   <Clock className="size-3" />
@@ -330,16 +346,17 @@ function MonobankImport() {
             <div className="h-2 overflow-hidden rounded-full bg-muted">
               <div
                 className={cn("h-full rounded-full transition-all", job.status === "error" ? "bg-destructive" : "bg-primary")}
-                style={{ width: `${(job.months_done / Math.max(1, job.months.length)) * 100}%` }}
+                style={{ width: `${(job.windows_done / Math.max(1, job.windows.length)) * 100}%` }}
               />
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {job.months.map((m, i) => (
+              {job.windows.map((w, i) => (
                 <Badge
-                  key={m}
-                  variant={i < job.months_done ? "default" : m === job.current ? "secondary" : "outline"}
+                  key={w.to}
+                  variant={i < job.windows_done ? "default" : running && i === job.windows_done ? "secondary" : "outline"}
+                  className="tabular-nums"
                 >
-                  {monthLabel(m)}
+                  {day(w.from)} – {day(w.to)}
                 </Badge>
               ))}
             </div>

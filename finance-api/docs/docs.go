@@ -786,7 +786,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/services.MonobankMonthsJob"
+                            "$ref": "#/definitions/services.MonobankFetchJob"
                         }
                     },
                     "204": {
@@ -806,7 +806,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Starts a background fetch of the account's statements for the months from..to (YYYY-MM, at most 24).\nMonobank allows one statement call a minute, so this takes about a minute per month. The token is\nthe user's personal Monobank API token; it is used for this fetch only and never stored. Admins may leave\nit empty to use the server's MONOBANK_TOKEN.",
+                "description": "Starts a background fetch of the account's statements. With from and to (YYYY-MM) it fetches those\nmonths; with both empty it updates: from 3 days before the newest saved operation (at least the last\n31 days) to now, usually one call. The range is cut into Monobank's widest windows (31 days + 1 hour,\nat most 24 windows) and Monobank allows one call a minute, so each window takes about a minute.\nThe token is the user's personal Monobank API token, used for this fetch only and never stored.\nAdmins may leave it empty to use the server's MONOBANK_TOKEN.",
                 "consumes": [
                     "application/json"
                 ],
@@ -816,10 +816,10 @@ const docTemplate = `{
                 "tags": [
                     "imports"
                 ],
-                "summary": "Fetch Monobank statements by month",
+                "summary": "Fetch Monobank statements",
                 "parameters": [
                     {
-                        "description": "Account, token and months",
+                        "description": "Account, token and optional months",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -832,7 +832,7 @@ const docTemplate = `{
                     "202": {
                         "description": "Accepted",
                         "schema": {
-                            "$ref": "#/definitions/services.MonobankMonthsJob"
+                            "$ref": "#/definitions/services.MonobankFetchJob"
                         }
                     },
                     "400": {
@@ -858,6 +858,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
                     }
                 }
             },
@@ -879,7 +885,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/services.MonobankMonthsJob"
+                            "$ref": "#/definitions/services.MonobankFetchJob"
                         }
                     },
                     "401": {
@@ -1959,16 +1965,14 @@ const docTemplate = `{
         "handlers.monobankImportRequest": {
             "type": "object",
             "required": [
-                "account_id",
-                "from",
-                "to"
+                "account_id"
             ],
             "properties": {
                 "account_id": {
                     "type": "string"
                 },
                 "from": {
-                    "description": "YYYY-MM",
+                    "description": "YYYY-MM; from and to both empty: update since the newest saved operation",
                     "type": "string"
                 },
                 "to": {
@@ -2125,17 +2129,18 @@ const docTemplate = `{
                 }
             }
         },
-        "services.MonobankMonthsJob": {
+        "services.MonobankFetchJob": {
             "type": "object",
             "properties": {
                 "account_id": {
                     "type": "string"
                 },
-                "created": {
+                "calls": {
+                    "description": "Monobank calls so far: windows plus extra pages of busy windows",
                     "type": "integer"
                 },
-                "current": {
-                    "type": "string"
+                "created": {
+                    "type": "integer"
                 },
                 "error": {
                     "type": "string"
@@ -2145,15 +2150,6 @@ const docTemplate = `{
                 },
                 "finished_at": {
                     "type": "string"
-                },
-                "months": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "months_done": {
-                    "type": "integer"
                 },
                 "next_call_at": {
                     "description": "when the next Monobank call goes out (rate limit)",
@@ -2165,6 +2161,15 @@ const docTemplate = `{
                 "status": {
                     "description": "running, done, error, cancelled",
                     "type": "string"
+                },
+                "windows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/services.StatementWindow"
+                    }
+                },
+                "windows_done": {
+                    "type": "integer"
                 }
             }
         },
@@ -2186,6 +2191,17 @@ const docTemplate = `{
                 },
                 "description": {
                     "type": "string"
+                }
+            }
+        },
+        "services.StatementWindow": {
+            "type": "object",
+            "properties": {
+                "from": {
+                    "type": "integer"
+                },
+                "to": {
+                    "type": "integer"
                 }
             }
         },

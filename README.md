@@ -101,10 +101,16 @@ Both importers are part of the API and the web UI (the separate `monobank-import
 
 ### Monobank
 - **Live:** the Monobank webhook (`POST /api/v1/webhooks/monobank`) saves each purchase and the balance.
-- **History:** web UI → Monobank history. Paste the personal token and press Show cards
+- **Update and history:** web UI → Monobank history. Paste the personal token and press Show cards
   (`POST /api/v1/imports/monobank/accounts`): the page lists your Monobank cards. Pick one; a card that is not
-  yet one of your accounts is added. Then pick the months (`POST /api/v1/imports/monobank`).
-  Monobank allows one statement call a minute, so each month takes about a minute; the page shows progress, and
+  yet one of your accounts is added. Then (`POST /api/v1/imports/monobank`):
+  - **Update** (no `from`/`to`): from 3 days before the newest saved operation to now, and at least the last 31 days.
+    Usually one call.
+  - **History** (`from`, `to` as YYYY-MM): those months.
+
+  Monobank allows one statement call a minute, each for at most 31 days + 1 hour, so the range is cut into windows
+  of exactly that size (fewest calls; at most 24, about 2 years). A window with 500 operations is paged from its
+  oldest operation. Each call takes about a minute; the page shows progress, and
   Cancel (`DELETE /api/v1/imports/monobank`) stops it, keeping the months already saved.
   The token is used for those calls only and never stored; admins may leave it empty to use `MONOBANK_TOKEN`.
 

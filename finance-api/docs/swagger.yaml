@@ -147,7 +147,8 @@ definitions:
       account_id:
         type: string
       from:
-        description: YYYY-MM
+        description: 'YYYY-MM; from and to both empty: update since the newest saved
+          operation'
         type: string
       to:
         description: YYYY-MM
@@ -158,8 +159,6 @@ definitions:
         type: string
     required:
     - account_id
-    - from
-    - to
     type: object
   handlers.monobankTokenRequest:
     properties:
@@ -259,26 +258,21 @@ definitions:
       type:
         type: string
     type: object
-  services.MonobankMonthsJob:
+  services.MonobankFetchJob:
     properties:
       account_id:
         type: string
+      calls:
+        description: 'Monobank calls so far: windows plus extra pages of busy windows'
+        type: integer
       created:
         type: integer
-      current:
-        type: string
       error:
         type: string
       fetched:
         type: integer
       finished_at:
         type: string
-      months:
-        items:
-          type: string
-        type: array
-      months_done:
-        type: integer
       next_call_at:
         description: when the next Monobank call goes out (rate limit)
         type: string
@@ -287,6 +281,12 @@ definitions:
       status:
         description: running, done, error, cancelled
         type: string
+      windows:
+        items:
+          $ref: '#/definitions/services.StatementWindow'
+        type: array
+      windows_done:
+        type: integer
     type: object
   services.PrivatbankRow:
     properties:
@@ -301,6 +301,13 @@ definitions:
         type: string
       description:
         type: string
+    type: object
+  services.StatementWindow:
+    properties:
+      from:
+        type: integer
+      to:
+        type: integer
     type: object
   transaction_dto.CreateTransactionRequest:
     properties:
@@ -956,7 +963,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/services.MonobankMonthsJob'
+            $ref: '#/definitions/services.MonobankFetchJob'
         "401":
           description: Not logged in
           schema:
@@ -977,7 +984,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/services.MonobankMonthsJob'
+            $ref: '#/definitions/services.MonobankFetchJob'
         "204":
           description: No fetch since the server started
         "401":
@@ -993,12 +1000,14 @@ paths:
       consumes:
       - application/json
       description: |-
-        Starts a background fetch of the account's statements for the months from..to (YYYY-MM, at most 24).
-        Monobank allows one statement call a minute, so this takes about a minute per month. The token is
-        the user's personal Monobank API token; it is used for this fetch only and never stored. Admins may leave
-        it empty to use the server's MONOBANK_TOKEN.
+        Starts a background fetch of the account's statements. With from and to (YYYY-MM) it fetches those
+        months; with both empty it updates: from 3 days before the newest saved operation (at least the last
+        31 days) to now, usually one call. The range is cut into Monobank's widest windows (31 days + 1 hour,
+        at most 24 windows) and Monobank allows one call a minute, so each window takes about a minute.
+        The token is the user's personal Monobank API token, used for this fetch only and never stored.
+        Admins may leave it empty to use the server's MONOBANK_TOKEN.
       parameters:
-      - description: Account, token and months
+      - description: Account, token and optional months
         in: body
         name: request
         required: true
@@ -1010,7 +1019,7 @@ paths:
         "202":
           description: Accepted
           schema:
-            $ref: '#/definitions/services.MonobankMonthsJob'
+            $ref: '#/definitions/services.MonobankFetchJob'
         "400":
           description: Bad Request
           schema:
@@ -1027,9 +1036,13 @@ paths:
           description: A fetch is already running
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
       security:
       - BearerAuth: []
-      summary: Fetch Monobank statements by month
+      summary: Fetch Monobank statements
       tags:
       - imports
   /imports/monobank/accounts:

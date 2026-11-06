@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -184,6 +185,8 @@ func fakeMonobank(t *testing.T) {
 		switch {
 		case r.URL.Path == "/personal/client-info":
 			fmt.Fprint(w, `{"name":"Test","accounts":[{"id":"mono-acc-1","type":"black","currencyCode":980,"balance":12345,"creditLimit":0,"maskedPan":["537541******1234"],"iban":"UA00"}]}`)
+		case strings.HasPrefix(r.URL.Path, "/personal/statement/mono-page/"):
+			fakePage(w, r)
 		case strings.HasPrefix(r.URL.Path, "/personal/statement/mono-acc-1/"):
 			fmt.Fprint(w, `[{"id":"item-1","time":1767225600,"description":"АТБ","mcc":5411,"amount":-1000,"currencyCode":980,"balance":12345}]`)
 		default:
@@ -255,11 +258,11 @@ func TestCancelMonobankImport(t *testing.T) {
 		JSON(fmt.Sprintf(`{"account_id":%q,"token":"good","from":"2026-01","to":"2026-02"}`, acc.ID)).
 		Expect(t).Status(http.StatusAccepted).End()
 
-	// The first month is fetched at once; the second waits for the rate limit until cancelled
+	// Two months are two windows: the first is fetched at once, the second waits for the rate limit until cancelled
 	status := func() (job struct {
-		Status     string `json:"status"`
-		MonthsDone int    `json:"months_done"`
-		Fetched    int    `json:"fetched"`
+		Status      string `json:"status"`
+		WindowsDone int    `json:"windows_done"`
+		Fetched     int    `json:"fetched"`
 	}) {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/imports/monobank", nil)
@@ -269,19 +272,92 @@ func TestCancelMonobankImport(t *testing.T) {
 		return job
 	}
 	deadline := time.Now().Add(5 * time.Second)
-	for status().MonthsDone < 1 {
+	for status().WindowsDone < 1 {
 		if time.Now().After(deadline) {
-			t.Fatalf("first month not fetched: %+v", status())
+			t.Fatalf("first window not fetched: %+v", status())
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 
 	apitest.New().Handler(router).Delete("/api/v1/imports/monobank").Header("Authorization", auth).
 		Expect(t).Status(http.StatusOK).End()
-	if job := status(); job.Status != "cancelled" || job.MonthsDone != 1 || job.Fetched != 1 {
+	if job := status(); job.Status != "cancelled" || job.WindowsDone != 1 || job.Fetched != 1 {
 		t.Fatalf("after cancel: %+v", job)
 	}
 	// A new fetch may start right away
 	apitest.New().Handler(router).Delete("/api/v1/imports/monobank").Header("Authorization", auth).
 		Expect(t).Status(http.StatusNotFound).End()
+}
+
+// fakePage: account mono-page has 501 operations in its last window: a full first page, then the rest.
+// The second call must go on from the oldest item of the first page; that item comes again and is not duplicated.
+var pageCalls []string
+
+func fakePage(w http.ResponseWriter, r *http.Request) {
+	pageCalls = append(pageCalls, r.URL.Path)
+	parts := strings.Split(r.URL.Path, "/") // "", personal, statement, account, from, to
+	to, _ := strconv.ParseInt(parts[5], 10, 64)
+	item := func(k int64) map[string]any {
+		return map[string]any{"id": fmt.Sprintf("page-%d", k), "time": 1_700_000_000 - k*60, "amount": -100, "currencyCode": 980, "balance": 777}
+	}
+	var items []map[string]any
+	if len(pageCalls) == 1 {
+		for k := int64(0); k < 500; k++ {
+			items = append(items, item(k))
+		}
+	} else if to == 1_700_000_000-499*60 {
+		items = []map[string]any{item(499), item(500)}
+	}
+	_ = json.NewEncoder(w).Encode(items)
+}
+
+func TestMonobankUpdatePages(t *testing.T) {
+	fakeMonobank(t)
+	testCfg.MonobankRateLimitSeconds = 1
+	pageCalls = nil
+	userID := createTestUser(t)
+	auth := authHeaderForUser(t, userID)
+	var acc struct {
+		ID string `json:"id"`
+	}
+	apitest.New().Handler(router).Post("/api/v1/accounts").Header("Authorization", auth).
+		JSON(`{"bank":1,"name":"Paged","currency":980,"external_id":"mono-page"}`).
+		Expect(t).Status(http.StatusCreated).
+		Assert(func(res *http.Response, _ *http.Request) error { return json.NewDecoder(res.Body).Decode(&acc) }).
+		End()
+
+	// No months: an update. Nothing saved yet, so the last full window: one window
+	var started struct {
+		Windows []struct{ From, To int64 } `json:"windows"`
+	}
+	apitest.New().Handler(router).Post("/api/v1/imports/monobank").Header("Authorization", auth).
+		JSON(fmt.Sprintf(`{"account_id":%q,"token":"good"}`, acc.ID)).
+		Expect(t).Status(http.StatusAccepted).
+		Assert(func(res *http.Response, _ *http.Request) error { return json.NewDecoder(res.Body).Decode(&started) }).
+		End()
+	if len(started.Windows) != 1 || started.Windows[0].To-started.Windows[0].From != 2682000 {
+		t.Fatalf("update windows: %+v", started.Windows)
+	}
+
+	var job struct {
+		Status         string
+		Calls, Fetched int
+		Created        int
+		WindowsDone    int `json:"windows_done"`
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for job.Status != "done" && job.Status != "error" {
+		if time.Now().After(deadline) {
+			t.Fatalf("not done: %+v", job)
+		}
+		time.Sleep(50 * time.Millisecond)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/imports/monobank", nil)
+		req.Header.Set("Authorization", auth)
+		router.ServeHTTP(rec, req)
+		_ = json.Unmarshal(rec.Body.Bytes(), &job)
+	}
+	if job.Status != "done" || job.Calls != 2 || job.Fetched != 502 || job.Created != 501 || job.WindowsDone != 1 {
+		t.Fatalf("job: %+v, calls %v", job, pageCalls)
+	}
 }

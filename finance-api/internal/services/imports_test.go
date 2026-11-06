@@ -79,36 +79,73 @@ func TestParsePrivatbankXLSXErrors(t *testing.T) {
 	}
 }
 
-func TestMonthRanges(t *testing.T) {
+func TestStatementWindows(t *testing.T) {
+	const w = services.MonobankMaxWindow
+	// 70 days: three widest windows, newest first, contiguous, none over Monobank's limit
+	got := services.StatementWindows(1_000_000, 1_000_000+70*86400)
+	if len(got) != 3 || got[0].To != 1_000_000+70*86400 || got[2].From != 1_000_000 {
+		t.Fatalf("windows: %+v", got)
+	}
+	for i, x := range got {
+		if x.To-x.From > w {
+			t.Errorf("window %d spans %d s", i, x.To-x.From)
+		}
+		if i > 0 && got[i-1].From != x.To+1 {
+			t.Errorf("gap or overlap before window %d", i)
+		}
+	}
+	if got[0].To-got[0].From != w || got[1].To-got[1].From != w {
+		t.Error("all but the oldest window must be full")
+	}
+	// Exactly one window fits in one call
+	if n := len(services.StatementWindows(0, w)); n != 1 {
+		t.Errorf("one full window: %d calls", n)
+	}
+	// A year: 12 calls, as many as months, though windows run past month ends
+	if n := len(services.StatementWindows(0, 365*86400)); n != 12 {
+		t.Errorf("a year: %d calls", n)
+	}
+}
+
+func TestMonthSpan(t *testing.T) {
 	kyiv, _ := time.LoadLocation("Europe/Kyiv")
 	now := time.Date(2026, 11, 6, 15, 0, 0, 0, kyiv)
 
-	months, err := services.MonthRanges("2026-09", "2026-12", now)
+	from, to, err := services.MonthSpan("2026-09", "2026-12", now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// December is in the future: skipped; newest first; November ends now
-	if len(months) != 3 || months[0].Label != "2026-11" || months[2].Label != "2026-09" {
-		t.Fatalf("months: %+v", months)
+	if from != time.Date(2026, 9, 1, 0, 0, 0, 0, kyiv).Unix() || to != now.Unix() {
+		t.Fatalf("span %d..%d", from, to)
 	}
-	if months[0].To != now.Unix() {
-		t.Error("the current month must end now")
+	_, to, _ = services.MonthSpan("2026-09", "2026-10", now)
+	if to != time.Date(2026, 11, 1, 0, 0, 0, 0, kyiv).Unix()-1 {
+		t.Errorf("October ends %d", to)
 	}
-	oct := months[1]
-	if oct.From != time.Date(2026, 10, 1, 0, 0, 0, 0, kyiv).Unix() || oct.To != time.Date(2026, 11, 1, 0, 0, 0, 0, kyiv).Unix()-1 {
-		t.Errorf("October bounds: %+v", oct)
-	}
-	// Every month fits Monobank's 31 days + 1 hour window
-	for _, m := range months {
-		if m.To-m.From > 2682000 {
-			t.Errorf("%s spans %d s", m.Label, m.To-m.From)
-		}
-	}
-
-	for _, bad := range [][2]string{{"2026-10", "2026-09"}, {"2027-01", "2027-02"}, {"2024-01", "2026-11"}, {"x", "2026-11"}} {
-		if _, err := services.MonthRanges(bad[0], bad[1], now); err == nil {
+	for _, bad := range [][2]string{{"2026-10", "2026-09"}, {"2027-01", "2027-02"}, {"x", "2026-11"}} {
+		if _, _, err := services.MonthSpan(bad[0], bad[1], now); err == nil {
 			t.Errorf("%v: expected an error", bad)
 		}
+	}
+}
+
+func TestUpdateSpan(t *testing.T) {
+	now := time.Date(2026, 11, 6, 15, 0, 0, 0, time.UTC)
+	full := now.Unix() - services.MonobankMaxWindow
+
+	// Nothing saved, or saved yesterday: one full window, the same single call
+	if from, to := services.UpdateSpan(nil, now); from != full || to != now.Unix() {
+		t.Errorf("nothing saved: %d..%d", from, to)
+	}
+	yesterday := now.Add(-24 * time.Hour)
+	if from, _ := services.UpdateSpan(&yesterday, now); from != full {
+		t.Errorf("saved yesterday: from %d", from)
+	}
+	// Saved 50 days ago: from 3 days before it, two calls
+	old := now.Add(-50 * 24 * time.Hour)
+	from, to := services.UpdateSpan(&old, now)
+	if from != old.Add(-services.UpdateOverlap).Unix() || len(services.StatementWindows(from, to)) != 2 {
+		t.Errorf("saved 50 days ago: from %d", from)
 	}
 }
 

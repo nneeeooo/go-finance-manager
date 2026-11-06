@@ -5,6 +5,7 @@ import (
 	"finance-api/internal/config"
 	"finance-api/internal/models"
 	"finance-api/internal/services"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"sort"
@@ -154,37 +155,40 @@ func ImportPrivatbank(c *gin.Context) {
 // One Monobank fetch per user at a time; the newest one per user is kept for the status endpoint
 var (
 	monobankJobsMu sync.Mutex
-	monobankJobs   = map[uuid.UUID]*services.MonobankMonthsJob{}
+	monobankJobs   = map[uuid.UUID]*services.MonobankFetchJob{}
 )
 
 type monobankImportRequest struct {
 	AccountID string `json:"account_id" binding:"required"`
-	Token     string `json:"token"`                   // personal Monobank token, used for this fetch only and never stored; empty: admins use MONOBANK_TOKEN
-	From      string `json:"from" binding:"required"` // YYYY-MM
-	To        string `json:"to" binding:"required"`   // YYYY-MM
+	Token     string `json:"token"` // personal Monobank token, used for this fetch only and never stored; empty: admins use MONOBANK_TOKEN
+	From      string `json:"from"`  // YYYY-MM; from and to both empty: update since the newest saved operation
+	To        string `json:"to"`    // YYYY-MM
 }
 
 // StartMonobankImport godoc
-// @Summary Fetch Monobank statements by month
-// @Description Starts a background fetch of the account's statements for the months from..to (YYYY-MM, at most 24).
-// @Description Monobank allows one statement call a minute, so this takes about a minute per month. The token is
-// @Description the user's personal Monobank API token; it is used for this fetch only and never stored. Admins may leave
-// @Description it empty to use the server's MONOBANK_TOKEN.
+// @Summary Fetch Monobank statements
+// @Description Starts a background fetch of the account's statements. With from and to (YYYY-MM) it fetches those
+// @Description months; with both empty it updates: from 3 days before the newest saved operation (at least the last
+// @Description 31 days) to now, usually one call. The range is cut into Monobank's widest windows (31 days + 1 hour,
+// @Description at most 24 windows) and Monobank allows one call a minute, so each window takes about a minute.
+// @Description The token is the user's personal Monobank API token, used for this fetch only and never stored.
+// @Description Admins may leave it empty to use the server's MONOBANK_TOKEN.
 // @Tags imports
 // @Accept json
 // @Produce json
-// @Param request body monobankImportRequest true "Account, token and months"
-// @Success 202 {object} services.MonobankMonthsJob
+// @Param request body monobankImportRequest true "Account, token and optional months"
+// @Success 202 {object} services.MonobankFetchJob
 // @Failure 400 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse "A fetch is already running"
 // @Security BearerAuth
 // @Failure 401 {object} ErrorResponse "Not logged in"
 // @Failure 404 {object} ErrorResponse "Account not found"
+// @Failure 500 {object} ErrorResponse
 // @Router /imports/monobank [post]
 func StartMonobankImport(c *gin.Context) {
 	var req monobankImportRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Expected account_id, from and to"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Expected account_id"})
 		return
 	}
 	account, ok := ownAccount(c, req.AccountID, models.BankMonobank)
@@ -195,9 +199,27 @@ func StartMonobankImport(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "The account has no Monobank account id (external_id)"})
 		return
 	}
-	months, err := services.MonthRanges(req.From, req.To, time.Now())
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+
+	db := c.MustGet("db").(*gorm.DB)
+	now := time.Now()
+	var from, to int64
+	if req.From == "" && req.To == "" {
+		var newest struct{ At *time.Time }
+		if err := db.Model(&models.Transaction{}).Select("max(occurred_at) AS at").Where("account_id = ?", account.ID).Scan(&newest).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read the newest operation"})
+			return
+		}
+		from, to = services.UpdateSpan(newest.At, now)
+	} else {
+		var err error
+		if from, to, err = services.MonthSpan(req.From, req.To, now); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+	windows := services.StatementWindows(from, to)
+	if len(windows) > services.MaxMonobankWindows {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("At most %d windows of 31 days at once (about 2 years): split the range", services.MaxMonobankWindows)})
 		return
 	}
 
@@ -213,7 +235,7 @@ func StartMonobankImport(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "A Monobank fetch is already running"})
 		return
 	}
-	job := services.NewMonobankMonthsJob(account.ID, months)
+	job := services.NewMonobankFetchJob(account.ID, windows)
 	monobankJobs[userID] = job
 	monobankJobsMu.Unlock()
 
@@ -221,8 +243,7 @@ func StartMonobankImport(c *gin.Context) {
 	if wait <= 0 {
 		wait = 60 * time.Second
 	}
-	db := c.MustGet("db").(*gorm.DB)
-	go job.Run(db, client, account, months, wait, job.Sleep)
+	go job.Run(db, client, account, windows, wait, job.Sleep)
 
 	c.JSON(http.StatusAccepted, job.Snapshot())
 }
@@ -331,7 +352,7 @@ func ListMonobankAccounts(c *gin.Context) {
 // @Description Stops before the next Monobank call; months already fetched stay saved.
 // @Tags imports
 // @Produce json
-// @Success 200 {object} services.MonobankMonthsJob
+// @Success 200 {object} services.MonobankFetchJob
 // @Failure 404 {object} ErrorResponse "No fetch is running"
 // @Security BearerAuth
 // @Failure 401 {object} ErrorResponse "Not logged in"
@@ -352,7 +373,7 @@ func CancelMonobankImport(c *gin.Context) {
 // @Summary Progress of the user's last Monobank fetch
 // @Tags imports
 // @Produce json
-// @Success 200 {object} services.MonobankMonthsJob
+// @Success 200 {object} services.MonobankFetchJob
 // @Success 204 "No fetch since the server started"
 // @Security BearerAuth
 // @Failure 401 {object} ErrorResponse "Not logged in"
