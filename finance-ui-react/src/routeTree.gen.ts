@@ -11,7 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountsRouteImport } from './routes/accounts'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as UserRouteImport } from './routes/user'
+import { Route as ImportMonobankRouteImport } from './routes/import.monobank'
+import { Route as ImportPrivatbankRouteImport } from './routes/import.privatbank'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -23,40 +26,86 @@ const AccountsRoute = AccountsRouteImport.update({
   path: '/accounts',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const UserRoute = UserRouteImport.update({
   id: '/user',
   path: '/user',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ImportMonobankRoute = ImportMonobankRouteImport.update({
+  id: '/import/monobank',
+  path: '/import/monobank',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ImportPrivatbankRoute = ImportPrivatbankRouteImport.update({
+  id: '/import/privatbank',
+  path: '/import/privatbank',
   getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
+  '/settings': typeof SettingsRoute
   '/user': typeof UserRoute
+  '/import/monobank': typeof ImportMonobankRoute
+  '/import/privatbank': typeof ImportPrivatbankRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
+  '/settings': typeof SettingsRoute
   '/user': typeof UserRoute
+  '/import/monobank': typeof ImportMonobankRoute
+  '/import/privatbank': typeof ImportPrivatbankRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
+  '/settings': typeof SettingsRoute
   '/user': typeof UserRoute
+  '/import/monobank': typeof ImportMonobankRoute
+  '/import/privatbank': typeof ImportPrivatbankRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/accounts' | '/user'
+  fullPaths:
+    | '/'
+    | '/accounts'
+    | '/settings'
+    | '/user'
+    | '/import/monobank'
+    | '/import/privatbank'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/accounts' | '/user'
-  id: '__root__' | '/' | '/accounts' | '/user'
+  to:
+    | '/'
+    | '/accounts'
+    | '/settings'
+    | '/user'
+    | '/import/monobank'
+    | '/import/privatbank'
+  id:
+    | '__root__'
+    | '/'
+    | '/accounts'
+    | '/settings'
+    | '/user'
+    | '/import/monobank'
+    | '/import/privatbank'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountsRoute: typeof AccountsRoute
+  SettingsRoute: typeof SettingsRoute
   UserRoute: typeof UserRoute
+  ImportMonobankRoute: typeof ImportMonobankRoute
+  ImportPrivatbankRoute: typeof ImportPrivatbankRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -75,11 +124,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/user': {
       id: '/user'
       path: '/user'
       fullPath: '/user'
       preLoaderRoute: typeof UserRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/import/monobank': {
+      id: '/import/monobank'
+      path: '/import/monobank'
+      fullPath: '/import/monobank'
+      preLoaderRoute: typeof ImportMonobankRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/import/privatbank': {
+      id: '/import/privatbank'
+      path: '/import/privatbank'
+      fullPath: '/import/privatbank'
+      preLoaderRoute: typeof ImportPrivatbankRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -88,7 +158,10 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountsRoute: AccountsRoute,
+  SettingsRoute: SettingsRoute,
   UserRoute: UserRoute,
+  ImportMonobankRoute: ImportMonobankRoute,
+  ImportPrivatbankRoute: ImportPrivatbankRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

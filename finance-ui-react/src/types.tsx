@@ -30,3 +30,21 @@ export type Account = {
 };
 
 export type ChartMode = "all" | "quarters" | "months" | "days";
+
+export type Role = "regular" | "admin";
+
+export type User = {
+  id: string;
+  email: string;
+  role: Role;
+};
+
+/** Sign-up allow-list entry (admin settings) */
+export type AllowedEmail = {
+  id: string;
+  email: string;
+  role: Role;
+  registered: boolean;
+  registered_at?: string;
+  created_at: string;
+};

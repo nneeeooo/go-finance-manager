@@ -145,6 +145,11 @@ func (j *MonobankMonthsJob) Run(db *gorm.DB, client *resty.Client, account model
 		to := m.To
 		for {
 			items, err := call(m.From, to)
+			var httpErr *MonobankHTTPError
+			if errors.As(err, &httpErr) && (httpErr.Status == 401 || httpErr.Status == 403) {
+				fail(fmt.Errorf("Monobank refused the token: check it on api.monobank.ua"))
+				return
+			}
 			if err != nil {
 				fail(fmt.Errorf("%s: %w", m.Label, err))
 				return
