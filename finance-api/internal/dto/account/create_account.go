@@ -19,3 +19,11 @@ type CreateAccountRequest struct {
 type CreateAccountResponse struct {
 	ID uuid.UUID `json:"id"`
 }
+
+// UpdateAccountRequest: nil = unchanged. The bank of an account does not change.
+type UpdateAccountRequest struct {
+	Name       *string `json:"name" validate:"omitempty,min=1,max=100"`
+	ExternalID *string `json:"external_id" validate:"omitempty,max=128"`
+	Currency   *uint16 `json:"currency"`
+	Balance    *int64  `json:"balance"`
+}

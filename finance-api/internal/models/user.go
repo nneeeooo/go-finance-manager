@@ -14,6 +14,8 @@ type User struct {
 
 	PasswordHash string `gorm:"type:text;not null"`
 
+	Role Role `gorm:"type:varchar(16);not null;default:'regular'"`
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	DeletedAt gorm.DeletedAt `gorm:"index"`

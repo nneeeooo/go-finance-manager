@@ -3,21 +3,22 @@
 // @description API for managing personal finances.
 // @host localhost:8080
 // @BasePath /api/v1
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description "Bearer <access_token>" from /auth/login, /auth/register or /auth/refresh
 package main
 
 import (
-	"errors"
 	"finance-api/internal/config"
 	"finance-api/internal/database"
-	"finance-api/internal/models"
 	"finance-api/internal/routes"
+	"finance-api/internal/services"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 
 	redoc "github.com/mvrilo/go-redoc"
 	ginredoc "github.com/mvrilo/go-redoc/gin"
@@ -29,30 +30,13 @@ func main() {
 	cfg := config.Load("../.env")
 	db := database.Connect(cfg)
 
-	if err := db.AutoMigrate(
-		&models.User{},
-		&models.Account{},
-		&models.Transaction{},
-		&models.RefreshTokenFamily{},
-		&models.RefreshToken{},
-		&models.AllowedEmail{},
-	); err != nil {
+	if err := database.Migrate(db); err != nil {
 		panic(err)
 	}
 
-	// Seed initial allowed emails if configured
-	if initialEmails := os.Getenv("ALLOWED_REGISTRATION_EMAILS"); initialEmails != "" {
-		for _, raw := range strings.Split(initialEmails, ",") {
-			email := strings.ToLower(strings.TrimSpace(raw))
-			if email != "" {
-				var existing models.AllowedEmail
-				if err := db.Where("LOWER(email) = ?", email).First(&existing).Error; errors.Is(err, gorm.ErrRecordNotFound) {
-					_ = db.Create(&models.AllowedEmail{
-						Email: email,
-					})
-				}
-			}
-		}
+	// Allow-list: the default emails (lytvyn349@gmail.com is the admin) plus ALLOWED_REGISTRATION_EMAILS
+	if err := services.SeedAccess(db, os.Getenv("ALLOWED_REGISTRATION_EMAILS")); err != nil {
+		panic(err)
 	}
 
 	r := gin.Default()

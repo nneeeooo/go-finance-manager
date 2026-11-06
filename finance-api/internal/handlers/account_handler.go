@@ -21,8 +21,10 @@ import (
 // @Produce json
 // @Param request body account_dto.CreateAccountRequest true "Account data"
 // @Success 201 {object} account_dto.CreateAccountResponse
-// @Failure 400 {object} map[string]string "Invalid request body or input"
-// @Failure 500 {object} map[string]string "Failed to create account"
+// @Failure 400 {object} ErrorResponse "Invalid request body or input"
+// @Failure 500 {object} ErrorResponse "Failed to create account"
+// @Security BearerAuth
+// @Failure 401 {object} ErrorResponse "Not logged in"
 // @Router /accounts [post]
 func CreateAccount(c *gin.Context) {
 	var req account_dto.CreateAccountRequest
@@ -80,12 +82,14 @@ func CreateAccount(c *gin.Context) {
 // @Description Returns an account by ID.
 // @Tags accounts
 // @Produce json
-// @Param account_id path string true "Account UUID"
+// @Param id path string true "Account ID"
 // @Success 200 {object} account_dto.GetAccountResponse
-// @Failure 400 {object} map[string]string "Invalid account ID"
-// @Failure 404 {object} map[string]string "Account not found"
-// @Failure 500 {object} map[string]string "Failed to get account"
-// @Router /accounts/{account_id} [get]
+// @Failure 400 {object} ErrorResponse "Invalid account ID"
+// @Failure 404 {object} ErrorResponse "Account not found"
+// @Failure 500 {object} ErrorResponse "Failed to get account"
+// @Security BearerAuth
+// @Failure 401 {object} ErrorResponse "Not logged in"
+// @Router /accounts/{id} [get]
 func GetAccount(c *gin.Context) {
 	idStr := c.Param("account_id")
 	if idStr == "" {
@@ -139,8 +143,11 @@ func GetAccount(c *gin.Context) {
 // @Produce json
 // @Param id path string true "Account ID"
 // @Success 200 {array} transaction_dto.TransactionResponse
-// @Failure 400 {object} map[string]string "Invalid account ID"
-// @Failure 500 {object} map[string]string "Failed to fetch transactions"
+// @Failure 400 {object} ErrorResponse "Invalid account ID"
+// @Failure 500 {object} ErrorResponse "Failed to fetch transactions"
+// @Security BearerAuth
+// @Failure 401 {object} ErrorResponse "Not logged in"
+// @Failure 404 {object} ErrorResponse "Account not found"
 // @Router /accounts/{id}/transactions [get]
 func GetAccountTransactions(c *gin.Context) {
 	// Parse account ID
@@ -219,9 +226,11 @@ func GetAccountTransactions(c *gin.Context) {
 // @Tags accounts
 // @Param id path string true "Account ID"
 // @Success 204
-// @Failure 400 {object} map[string]string "Invalid account ID"
-// @Failure 404 {object} map[string]string "Account not found"
-// @Failure 500 {object} map[string]string "Failed to delete account"
+// @Failure 400 {object} ErrorResponse "Invalid account ID"
+// @Failure 404 {object} ErrorResponse "Account not found"
+// @Failure 500 {object} ErrorResponse "Failed to delete account"
+// @Security BearerAuth
+// @Failure 401 {object} ErrorResponse "Not logged in"
 // @Router /accounts/{id} [delete]
 func DeleteAccount(c *gin.Context) {
 	// Parse ID
@@ -235,9 +244,10 @@ func DeleteAccount(c *gin.Context) {
 
 	// Get DB
 	db := c.MustGet("db").(*gorm.DB)
+	userID := c.MustGet("user_id").(uuid.UUID)
 
-	// Delete account
-	result := db.Delete(&models.Account{}, "id = ?", id)
+	// Delete account: only the owner's (another user's id answers 404, like a missing one)
+	result := db.Delete(&models.Account{}, "id = ? AND user_id = ?", id, userID)
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to delete account",
@@ -253,4 +263,70 @@ func DeleteAccount(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+// UpdateAccount godoc
+// @Summary Edit an account
+// @Description Name, Monobank account id, currency or balance; only the owner's account. The bank stays.
+// @Tags accounts
+// @Accept json
+// @Produce json
+// @Param id path string true "Account ID"
+// @Param request body account_dto.UpdateAccountRequest true "Fields to change"
+// @Success 200 {object} account_dto.GetAccountResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Security BearerAuth
+// @Failure 401 {object} ErrorResponse "Not logged in"
+// @Failure 500 {object} ErrorResponse
+// @Router /accounts/{id} [patch]
+func UpdateAccount(c *gin.Context) {
+	var req account_dto.UpdateAccountRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+	if err := validator.New().Struct(req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid account ID"})
+		return
+	}
+	db := c.MustGet("db").(*gorm.DB)
+	var account models.Account
+	if err := db.First(&account, "id = ? AND user_id = ?", id, c.MustGet("user_id")).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Account not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get account"})
+		return
+	}
+	updates := map[string]any{}
+	if req.Name != nil {
+		updates["name"] = *req.Name
+	}
+	if req.ExternalID != nil {
+		updates["external_id"] = *req.ExternalID
+		updates["monobank_account_id"] = *req.ExternalID // kept in step, as on create
+	}
+	if req.Currency != nil {
+		updates["currency"] = *req.Currency
+	}
+	if req.Balance != nil {
+		updates["balance"] = *req.Balance
+	}
+	if len(updates) > 0 {
+		if err := db.Model(&account).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update account"})
+			return
+		}
+	}
+	c.JSON(http.StatusOK, account_dto.GetAccountResponse{
+		ID: account.ID, UserID: account.UserID, Bank: account.Bank, ExternalID: account.ExternalID,
+		MonobankAccountID: account.ExternalID, Name: account.Name, Currency: account.Currency, Balance: account.Balance,
+	})
 }

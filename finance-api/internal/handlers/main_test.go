@@ -6,13 +6,17 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
 	"finance-api/internal/auth"
 	"finance-api/internal/config"
 	"finance-api/internal/database"
+	"finance-api/internal/models"
 	"finance-api/internal/routes"
+	"finance-api/internal/services"
+	"finance-api/internal/utils"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -42,37 +46,39 @@ func authHeaderForUser(t *testing.T, userID string) string {
 	return "Bearer " + token
 }
 
+// testPassword: the password of every user the tests create
+const testPassword = "password123"
+
+var (
+	adminOnce   sync.Once
+	adminUserID string
+)
+
+// insertUser puts a user straight into the test DB (POST /users is admin-only)
+func insertUser(t *testing.T, role models.Role) string {
+	t.Helper()
+	hash, err := utils.HashPassword(testPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := models.User{Email: fmt.Sprintf("test_%d@example.com", time.Now().UnixNano()), PasswordHash: hash, Role: role}
+	if err := testDB.Create(&user).Error; err != nil {
+		t.Fatalf("failed to create test user: %v", err)
+	}
+	return user.ID.String()
+}
+
+// createTestUser: a regular user
 func createTestUser(t *testing.T) string {
 	t.Helper()
+	return insertUser(t, models.RoleRegular)
+}
 
-	email := fmt.Sprintf(
-		"test_%d@example.com",
-		time.Now().UnixNano(),
-	)
-
-	var resp struct {
-		ID string `json:"id"`
-	}
-
-	apitest.New().
-		Handler(router).
-		Post("/api/v1/users").
-		JSON(fmt.Sprintf(`{
-			"email":"%s",
-			"password":"password123"
-		}`, email)).
-		Expect(t).
-		Status(http.StatusCreated).
-		Assert(func(res *http.Response, _ *http.Request) error {
-			return json.NewDecoder(res.Body).Decode(&resp)
-		}).
-		End()
-
-	if resp.ID == "" {
-		t.Fatal("failed to create test user")
-	}
-
-	return resp.ID
+// adminHeader: Authorization header of one admin shared by the tests
+func adminHeader(t *testing.T) string {
+	t.Helper()
+	adminOnce.Do(func() { adminUserID = insertUser(t, models.RoleAdmin) })
+	return authHeaderForUser(t, adminUserID)
 }
 
 func createTestAccountForUser(t *testing.T, userID string) string {
@@ -174,35 +180,25 @@ func createTestTransaction(t *testing.T, userID string, accountID string) string
 	return resp.ID
 }
 
+// TestMain runs the tests on a new empty database on the configured Postgres server, migrated like the server's,
+// and drops it afterwards. The production database is not cloned or touched.
 func TestMain(m *testing.M) {
 	testCfg = config.Load("../../../.env")
 
-	// Connect to default 'postgres' database to clone and drop test database
 	sysDSN := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=postgres sslmode=%s",
 		testCfg.PostgresHost, testCfg.PostgresPort, testCfg.PostgresUser, testCfg.PostgresPassword, testCfg.PostgresSSLMode,
 	)
-	sysDB, err := gorm.Open(postgres.Open(sysDSN), &gorm.Config{
-		Logger: logger.Discard,
-	})
+	sysDB, err := gorm.Open(postgres.Open(sysDSN), &gorm.Config{Logger: logger.Discard})
 	if err != nil {
 		panic("failed to connect to postgres system database: " + err.Error())
 	}
 
 	testDBName := fmt.Sprintf("finance_db_test_%d", time.Now().UnixNano())
-
-	// Terminate active connections on prod DB and clone it as template
-	sysDB.Exec(fmt.Sprintf("ALTER DATABASE %s WITH ALLOW_CONNECTIONS false;", testCfg.PostgresDB))
-	sysDB.Exec(fmt.Sprintf("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '%s' AND pid != pg_backend_pid();", testCfg.PostgresDB))
-
-	cloneErr := sysDB.Exec(fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s;", testDBName, testCfg.PostgresDB)).Error
-	sysDB.Exec(fmt.Sprintf("ALTER DATABASE %s WITH ALLOW_CONNECTIONS true;", testCfg.PostgresDB))
-
-	if cloneErr != nil {
-		panic("failed to clone prod database: " + cloneErr.Error())
+	if err := sysDB.Exec(fmt.Sprintf("CREATE DATABASE %s;", testDBName)).Error; err != nil {
+		panic("failed to create test database: " + err.Error())
 	}
 
-	// Point test config to temporary cloned test database
 	cloneCfg := *testCfg
 	cloneCfg.PostgresDB = testDBName
 	cloneCfg.GinMode = "test"
@@ -212,6 +208,12 @@ func TestMain(m *testing.M) {
 
 	db := database.Connect(testCfg)
 	testDB = db
+	if err := database.Migrate(db); err != nil {
+		panic("failed to migrate test database: " + err.Error())
+	}
+	if err := services.SeedAccess(db, ""); err != nil {
+		panic("failed to seed access: " + err.Error())
+	}
 
 	router = gin.New()
 	router.Use(cors.Default())
@@ -225,7 +227,6 @@ func TestMain(m *testing.M) {
 
 	exitCode := m.Run()
 
-	// Clean up: close test DB connection and drop test DB
 	if sqlDB, err := db.DB(); err == nil {
 		_ = sqlDB.Close()
 	}

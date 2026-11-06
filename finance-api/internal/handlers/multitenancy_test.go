@@ -130,7 +130,7 @@ func TestMultiTenancyAndIDORIsolation(t *testing.T) {
 	// 6. IDOR Attack: User A tries to view transactions of User B's account -> 404 Not Found (doesn't leak account existence)
 	apitest.New().
 		Handler(router).
-		Get("/api/v1/accounts/" + accountB + "/transactions").
+		Get("/api/v1/accounts/"+accountB+"/transactions").
 		Header("Authorization", authHeaderForUser(t, userA)). // Authenticated as User A
 		Expect(t).
 		Status(http.StatusNotFound).

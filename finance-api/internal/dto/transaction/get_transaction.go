@@ -25,3 +25,11 @@ type TransactionResponse struct {
 	Hold              bool      `json:"hold"`
 	OccurredAt        time.Time `json:"occurred_at" validate:"required"`
 }
+
+// UpdateTransactionRequest: only the fields a user may correct; nil = unchanged
+type UpdateTransactionRequest struct {
+	Category    *string `json:"category" validate:"omitempty,max=128"`
+	Description *string `json:"description" validate:"omitempty,max=1000"`
+	Comment     *string `json:"comment" validate:"omitempty,max=1000"`
+	MCC         *uint16 `json:"mcc"`
+}

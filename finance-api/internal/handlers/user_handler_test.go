@@ -22,6 +22,7 @@ func TestCreateUser(t *testing.T) {
 	apitest.New().
 		Handler(router).
 		Post("/api/v1/users").
+		Header("Authorization", adminHeader(t)).
 		JSON(fmt.Sprintf(`{
 			"email":"%s",
 			"password":"password123"
@@ -37,6 +38,7 @@ func TestCreateUserErrors(t *testing.T) {
 	apitest.New().
 		Handler(router).
 		Post("/api/v1/users").
+		Header("Authorization", adminHeader(t)).
 		JSON(fmt.Sprintf(`{"email":"%s","password":"password123"}`, existingEmail)).
 		Expect(t).
 		Status(http.StatusCreated).
@@ -84,6 +86,7 @@ func TestCreateUserErrors(t *testing.T) {
 			apitest.New().
 				Handler(router).
 				Post("/api/v1/users").
+				Header("Authorization", adminHeader(t)).
 				JSON(tt.body).
 				Expect(t).
 				Status(tt.statusCode).
@@ -97,7 +100,8 @@ func TestGetUser(t *testing.T) {
 
 	apitest.New().
 		Handler(router).
-		Get("/api/v1/users/" + userID).
+		Get("/api/v1/users/"+userID).
+		Header("Authorization", authHeaderForUser(t, userID)).
 		Expect(t).
 		Status(http.StatusOK).
 		Assert(func(res *http.Response, _ *http.Request) error {
@@ -125,6 +129,7 @@ func TestGetUserErrors(t *testing.T) {
 		apitest.New().
 			Handler(router).
 			Get("/api/v1/users/not-a-uuid").
+			Header("Authorization", adminHeader(t)).
 			Expect(t).
 			Status(http.StatusBadRequest).
 			End()
@@ -135,7 +140,8 @@ func TestGetUserErrors(t *testing.T) {
 
 		apitest.New().
 			Handler(router).
-			Get("/api/v1/users/" + userID.String()).
+			Get("/api/v1/users/"+userID.String()).
+			Header("Authorization", adminHeader(t)).
 			Expect(t).
 			Status(http.StatusNotFound).
 			End()
@@ -196,7 +202,8 @@ func TestDeleteUser(t *testing.T) {
 
 	apitest.New().
 		Handler(router).
-		Delete("/api/v1/users/" + userID).
+		Delete("/api/v1/users/"+userID).
+		Header("Authorization", adminHeader(t)).
 		Expect(t).
 		Status(http.StatusNoContent).
 		End()
@@ -224,7 +231,8 @@ func TestDeleteUserErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			apitest.New().
 				Handler(router).
-				Delete("/api/v1/users/" + tt.userID).
+				Delete("/api/v1/users/"+tt.userID).
+				Header("Authorization", adminHeader(t)).
 				Expect(t).
 				Status(tt.status).
 				End()

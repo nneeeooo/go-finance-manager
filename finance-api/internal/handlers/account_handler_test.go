@@ -101,7 +101,7 @@ func TestGetAccountTransactions(t *testing.T) {
 
 	apitest.New().
 		Handler(router).
-		Get("/api/v1/accounts/" + accountID + "/transactions").
+		Get("/api/v1/accounts/"+accountID+"/transactions").
 		Header("Authorization", authHeaderForUser(t, userID)).
 		Expect(t).
 		Status(http.StatusOK).
@@ -147,7 +147,7 @@ func TestGetAccountTransactionsErrors(t *testing.T) {
 	t.Run("account not found", func(t *testing.T) {
 		apitest.New().
 			Handler(router).
-			Get("/api/v1/accounts/" + uuid.New().String() + "/transactions").
+			Get("/api/v1/accounts/"+uuid.New().String()+"/transactions").
 			Header("Authorization", authHeaderForUser(t, userID)).
 			Expect(t).
 			Status(http.StatusNotFound).
@@ -161,7 +161,7 @@ func TestGetAccount(t *testing.T) {
 
 	apitest.New().
 		Handler(router).
-		Get("/api/v1/accounts/" + accountID).
+		Get("/api/v1/accounts/"+accountID).
 		Header("Authorization", authHeaderForUser(t, userID)).
 		Expect(t).
 		Status(http.StatusOK).
@@ -197,7 +197,7 @@ func TestGetAccountErrors(t *testing.T) {
 	t.Run("account not found", func(t *testing.T) {
 		apitest.New().
 			Handler(router).
-			Get("/api/v1/accounts/" + uuid.New().String()).
+			Get("/api/v1/accounts/"+uuid.New().String()).
 			Header("Authorization", authHeaderForUser(t, userID)).
 			Expect(t).
 			Status(http.StatusNotFound).
@@ -211,7 +211,7 @@ func TestDeleteAccount(t *testing.T) {
 
 	apitest.New().
 		Handler(router).
-		Delete("/api/v1/accounts/" + accountID).
+		Delete("/api/v1/accounts/"+accountID).
 		Header("Authorization", authHeaderForUser(t, userID)).
 		Expect(t).
 		Status(http.StatusNoContent).
@@ -289,7 +289,7 @@ func TestDeleteAccountErrors(t *testing.T) {
 
 		apitest.New().
 			Handler(router).
-			Delete("/api/v1/accounts/" + accountID.String()).
+			Delete("/api/v1/accounts/"+accountID.String()).
 			Header("Authorization", authHeaderForUser(t, userID)).
 			Expect(t).
 			Status(http.StatusNotFound).

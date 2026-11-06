@@ -22,8 +22,12 @@ import (
 // @Produce json
 // @Param request body transaction_dto.CreateTransactionRequest true "Transaction data"
 // @Success 201 {object} transaction_dto.CreateTransactionResponse
-// @Failure 400 {object} map[string]string "Invalid request body or input"
-// @Failure 500 {object} map[string]string "Failed to create transaction"
+// @Failure 400 {object} ErrorResponse "Invalid request body or input"
+// @Failure 500 {object} ErrorResponse "Failed to create transaction"
+// @Security BearerAuth
+// @Failure 401 {object} ErrorResponse "Not logged in"
+// @Failure 403 {object} ErrorResponse "Not your account"
+// @Failure 409 {object} ErrorResponse "Transaction id already exists"
 // @Router /transactions [post]
 func CreateTransaction(c *gin.Context) {
 	var validate = validator.New()
@@ -113,9 +117,10 @@ func CreateTransaction(c *gin.Context) {
 // @Tags transactions
 // @Produce json
 // @Success 200 {array} transaction_dto.TransactionResponse
-// @Failure 400 {object} map[string]string "Invalid user ID"
-// @Failure 500 {object} map[string]string "Failed to fetch transactions"
-// @Router /users/transactions [get]
+// @Failure 500 {object} ErrorResponse "Failed to fetch transactions"
+// @Security BearerAuth
+// @Failure 401 {object} ErrorResponse "Not logged in"
+// @Router /transactions [get]
 func GetUserTransactions(c *gin.Context) {
 	userID := c.MustGet("user_id").(uuid.UUID)
 
@@ -171,9 +176,11 @@ func GetUserTransactions(c *gin.Context) {
 // @Tags transactions
 // @Param id path string true "Transaction ID"
 // @Success 204
-// @Failure 400 {object} map[string]string "Invalid transaction ID"
-// @Failure 404 {object} map[string]string "Transaction not found"
-// @Failure 500 {object} map[string]string "Failed to delete transaction"
+// @Failure 400 {object} ErrorResponse "Invalid transaction ID"
+// @Failure 404 {object} ErrorResponse "Transaction not found"
+// @Failure 500 {object} ErrorResponse "Failed to delete transaction"
+// @Security BearerAuth
+// @Failure 401 {object} ErrorResponse "Not logged in"
 // @Router /transactions/{id} [delete]
 func DeleteTransaction(c *gin.Context) {
 	// Parse ID
@@ -188,8 +195,9 @@ func DeleteTransaction(c *gin.Context) {
 	// Get DB
 	db := c.MustGet("db").(*gorm.DB)
 
-	// Delete transaction
-	result := db.Delete(&models.Transaction{}, "id = ?", transactionID)
+	// Delete transaction: only from the user's own accounts
+	result := db.Where("account_id IN (?)", db.Model(&models.Account{}).Select("id").Where("user_id = ?", c.MustGet("user_id"))).
+		Delete(&models.Transaction{}, "id = ?", transactionID)
 
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -206,4 +214,107 @@ func DeleteTransaction(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+func transactionResponse(t models.Transaction) transaction_dto.TransactionResponse {
+	return transaction_dto.TransactionResponse{
+		ID: t.ID, AccountID: t.AccountID, BankID: uint16(t.BankID), ExternalID: t.ExternalID, Amount: t.Amount,
+		Currency: t.Currency, OperationAmount: t.OperationAmount, OperationCurrency: t.OperationCurrency,
+		Balance: t.Balance, CashbackAmount: t.CashbackAmount, CommissionRate: t.CommissionRate, MCC: t.MCC,
+		Category: t.Category, Description: t.Description, Comment: t.Comment, Hold: t.Hold, OccurredAt: t.OccurredAt,
+	}
+}
+
+// ownTransaction loads :id when it belongs to an account of the logged-in user; writes 400/404 otherwise
+// (another user's transaction answers 404, like a missing one)
+func ownTransaction(c *gin.Context) (models.Transaction, bool) {
+	var t models.Transaction
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid transaction ID"})
+		return t, false
+	}
+	db := c.MustGet("db").(*gorm.DB)
+	err = db.Joins("JOIN accounts ON accounts.id = transactions.account_id AND accounts.deleted_at IS NULL").
+		Where("transactions.id = ? AND accounts.user_id = ?", id, c.MustGet("user_id")).
+		First(&t).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Transaction not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get transaction"})
+		}
+		return t, false
+	}
+	return t, true
+}
+
+// GetTransaction godoc
+// @Summary Get a transaction
+// @Tags transactions
+// @Produce json
+// @Param id path string true "Transaction ID"
+// @Success 200 {object} transaction_dto.TransactionResponse
+// @Failure 404 {object} ErrorResponse
+// @Security BearerAuth
+// @Failure 401 {object} ErrorResponse "Not logged in"
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /transactions/{id} [get]
+func GetTransaction(c *gin.Context) {
+	if t, ok := ownTransaction(c); ok {
+		c.JSON(http.StatusOK, transactionResponse(t))
+	}
+}
+
+// UpdateTransaction godoc
+// @Summary Edit a transaction
+// @Description Changes what the user may correct: category, description, comment, MCC. Amounts and dates come from
+// @Description the bank and stay as they are.
+// @Tags transactions
+// @Accept json
+// @Produce json
+// @Param id path string true "Transaction ID"
+// @Param request body transaction_dto.UpdateTransactionRequest true "Fields to change"
+// @Success 200 {object} transaction_dto.TransactionResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Security BearerAuth
+// @Failure 401 {object} ErrorResponse "Not logged in"
+// @Failure 500 {object} ErrorResponse
+// @Router /transactions/{id} [patch]
+func UpdateTransaction(c *gin.Context) {
+	var req transaction_dto.UpdateTransactionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+	if err := validator.New().Struct(req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+		return
+	}
+	t, ok := ownTransaction(c)
+	if !ok {
+		return
+	}
+	updates := map[string]any{}
+	if req.Category != nil {
+		updates["category"] = *req.Category
+	}
+	if req.Description != nil {
+		updates["description"] = *req.Description
+	}
+	if req.Comment != nil {
+		updates["comment"] = *req.Comment
+	}
+	if req.MCC != nil {
+		updates["mcc"] = *req.MCC
+	}
+	if len(updates) > 0 {
+		if err := c.MustGet("db").(*gorm.DB).Model(&t).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update transaction"})
+			return
+		}
+	}
+	c.JSON(http.StatusOK, transactionResponse(t))
 }

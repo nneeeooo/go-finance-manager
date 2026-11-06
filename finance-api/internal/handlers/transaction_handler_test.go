@@ -250,7 +250,7 @@ func TestDeleteTransaction(t *testing.T) {
 
 	apitest.New().
 		Handler(router).
-		Delete("/api/v1/transactions/" + transactionID).
+		Delete("/api/v1/transactions/"+transactionID).
 		Header("Authorization", authHeaderForUser(t, userID)).
 		Expect(t).
 		Status(http.StatusNoContent).
@@ -275,7 +275,7 @@ func TestDeleteTransactionErrors(t *testing.T) {
 
 		apitest.New().
 			Handler(router).
-			Delete("/api/v1/transactions/" + transactionID.String()).
+			Delete("/api/v1/transactions/"+transactionID.String()).
 			Header("Authorization", authHeaderForUser(t, userID)).
 			Expect(t).
 			Status(http.StatusNotFound).

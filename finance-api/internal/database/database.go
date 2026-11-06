@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"finance-api/internal/config"
+	"finance-api/internal/models"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -37,4 +38,16 @@ func Connect(cfg *config.Config) *gorm.DB {
 	}
 
 	return db
+}
+
+// Migrate creates or updates every table (used by the server and the tests)
+func Migrate(db *gorm.DB) error {
+	return db.AutoMigrate(
+		&models.User{},
+		&models.Account{},
+		&models.Transaction{},
+		&models.RefreshTokenFamily{},
+		&models.RefreshToken{},
+		&models.AllowedEmail{},
+	)
 }

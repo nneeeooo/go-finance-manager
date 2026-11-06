@@ -3,12 +3,14 @@ package middleware
 import (
 	"finance-api/internal/auth"
 	"finance-api/internal/config"
+	"finance-api/internal/models"
 	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
@@ -53,6 +55,37 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 
 		c.Set("user_id", userID)
 
+		c.Next()
+	}
+}
+
+// LoadUser: after AuthMiddleware. The user must still exist, so a removed user loses access at once instead of
+// when the 15-minute token expires; the role is read fresh, so a role change applies to the next request.
+func LoadUser() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var user models.User
+		err := c.MustGet("db").(*gorm.DB).Select("id", "email", "role").First(&user, "id = ?", c.MustGet("user_id")).Error
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"error": "User not found",
+			})
+			return
+		}
+		c.Set("user_email", user.Email)
+		c.Set("user_role", user.Role)
+		c.Next()
+	}
+}
+
+// RequireAdmin: after AuthMiddleware; only admins pass
+func RequireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if role, _ := c.Get("user_role"); role != models.RoleAdmin {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"error": "Admins only",
+			})
+			return
+		}
 		c.Next()
 	}
 }

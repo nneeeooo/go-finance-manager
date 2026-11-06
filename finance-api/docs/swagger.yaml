@@ -2,14 +2,14 @@ basePath: /api/v1
 definitions:
   account_dto.CreateAccountRequest:
     properties:
+      balance:
+        type: integer
       bank:
-        allOf:
-        - $ref: '#/definitions/models.Bank'
-        enum:
-        - 1
-        - 2
+        $ref: '#/definitions/models.Bank'
       currency:
         type: integer
+      external_id:
+        type: string
       monobank_account_id:
         type: string
       name:
@@ -17,9 +17,9 @@ definitions:
       user_id:
         type: string
     required:
+    - bank
     - currency
     - name
-    - user_id
     type: object
   account_dto.CreateAccountResponse:
     properties:
@@ -28,10 +28,14 @@ definitions:
     type: object
   account_dto.GetAccountResponse:
     properties:
+      balance:
+        type: integer
       bank:
         $ref: '#/definitions/models.Bank'
       currency:
         type: integer
+      external_id:
+        type: string
       id:
         type: string
       monobank_account_id:
@@ -41,38 +45,277 @@ definitions:
       userId:
         type: string
     type: object
+  account_dto.UpdateAccountRequest:
+    properties:
+      balance:
+        type: integer
+      currency:
+        type: integer
+      external_id:
+        maxLength: 128
+        type: string
+      name:
+        maxLength: 100
+        minLength: 1
+        type: string
+    type: object
+  auth_dto.AccessTokenResponse:
+    properties:
+      access_token:
+        type: string
+      token_type:
+        type: string
+    type: object
+  auth_dto.LoginRequest:
+    properties:
+      email:
+        type: string
+      password:
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  auth_dto.RegisterRequest:
+    properties:
+      email:
+        maxLength: 320
+        type: string
+      password:
+        maxLength: 128
+        minLength: 8
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  handlers.ErrorResponse:
+    properties:
+      error:
+        example: Account not found
+        type: string
+    type: object
+  handlers.addAllowedEmailRequest:
+    properties:
+      email:
+        type: string
+      role:
+        $ref: '#/definitions/models.Role'
+    required:
+    - email
+    type: object
+  handlers.allowedEmailResponse:
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      registered:
+        type: boolean
+      registered_at:
+        type: string
+      role:
+        $ref: '#/definitions/models.Role'
+    type: object
+  handlers.monobankImportRequest:
+    properties:
+      account_id:
+        type: string
+      from:
+        description: YYYY-MM
+        type: string
+      to:
+        description: YYYY-MM
+        type: string
+      token:
+        description: 'personal Monobank token, used for this fetch only and never
+          stored; empty: admins use MONOBANK_TOKEN'
+        type: string
+    required:
+    - account_id
+    - from
+    - to
+    type: object
+  handlers.privatbankImportResponse:
+    properties:
+      dry_run:
+        type: boolean
+      from:
+        type: string
+      new:
+        description: 'dry run: would be added; import: added'
+        type: integer
+      preview:
+        description: newest operations first, up to 20
+        items:
+          $ref: '#/definitions/services.PrivatbankRow'
+        type: array
+      to:
+        type: string
+      total:
+        type: integer
+    type: object
+  handlers.updateAllowedEmailRequest:
+    properties:
+      role:
+        $ref: '#/definitions/models.Role'
+    required:
+    - role
+    type: object
   models.Bank:
     enum:
     - 1
     - 2
+    - 3
+    - 4
     format: int32
     type: integer
     x-enum-varnames:
     - BankMonobank
     - BankPrivatBank
+    - BankCash
+    - BankOther
+  models.Role:
+    enum:
+    - regular
+    - admin
+    type: string
+    x-enum-varnames:
+    - RoleRegular
+    - RoleAdmin
+  monobank_dto.StatementItem:
+    properties:
+      amount:
+        type: integer
+      balance:
+        type: integer
+      cashbackAmount:
+        type: integer
+      comment:
+        type: string
+      commissionRate:
+        type: integer
+      currencyCode:
+        type: integer
+      description:
+        type: string
+      hold:
+        type: boolean
+      id:
+        type: string
+      mcc:
+        type: integer
+      operationAmount:
+        type: integer
+      originalMcc:
+        type: integer
+      receiptId:
+        type: string
+      time:
+        type: integer
+    type: object
+  monobank_dto.WebhookData:
+    properties:
+      account:
+        type: string
+      statementItem:
+        $ref: '#/definitions/monobank_dto.StatementItem'
+    type: object
+  monobank_dto.WebhookRequest:
+    properties:
+      data:
+        $ref: '#/definitions/monobank_dto.WebhookData'
+      type:
+        type: string
+    type: object
+  services.MonobankMonthsJob:
+    properties:
+      account_id:
+        type: string
+      created:
+        type: integer
+      current:
+        type: string
+      error:
+        type: string
+      fetched:
+        type: integer
+      finished_at:
+        type: string
+      months:
+        items:
+          type: string
+        type: array
+      months_done:
+        type: integer
+      next_call_at:
+        description: when the next Monobank call goes out (rate limit)
+        type: string
+      started_at:
+        type: string
+      status:
+        description: running, done, error
+        type: string
+    type: object
+  services.PrivatbankRow:
+    properties:
+      amount:
+        description: minor units, negative = spent
+        type: integer
+      category:
+        type: string
+      currency:
+        type: string
+      date:
+        type: string
+      description:
+        type: string
+    type: object
   transaction_dto.CreateTransactionRequest:
     properties:
       account_id:
         type: string
       amount:
         type: integer
+      balance:
+        type: integer
+      bank_id:
+        type: integer
+      cashback_amount:
+        type: integer
+      category:
+        type: string
+      comment:
+        type: string
+      commission_rate:
+        type: integer
       currency:
         type: integer
       description:
         type: string
+      external_id:
+        type: string
+      hold:
+        type: boolean
       id:
         type: string
       mcc:
         type: integer
       occurred_at:
         type: string
+      operation_amount:
+        type: integer
+      operation_currency:
+        type: integer
     required:
     - account_id
     - amount
+    - bank_id
     - currency
     - description
     - id
-    - mcc
     - occurred_at
     type: object
   transaction_dto.CreateTransactionResponse:
@@ -86,24 +329,58 @@ definitions:
         type: string
       amount:
         type: integer
+      balance:
+        type: integer
+      bank_id:
+        type: integer
+      cashback_amount:
+        type: integer
+      category:
+        type: string
+      comment:
+        type: string
+      commission_rate:
+        type: integer
       currency:
         type: integer
       description:
         type: string
+      external_id:
+        type: string
+      hold:
+        type: boolean
       id:
         type: string
       mcc:
         type: integer
       occurred_at:
         type: string
+      operation_amount:
+        type: integer
+      operation_currency:
+        type: integer
     required:
     - account_id
     - amount
+    - bank_id
     - currency
     - description
     - id
-    - mcc
     - occurred_at
+    type: object
+  transaction_dto.UpdateTransactionRequest:
+    properties:
+      category:
+        maxLength: 128
+        type: string
+      comment:
+        maxLength: 1000
+        type: string
+      description:
+        maxLength: 1000
+        type: string
+      mcc:
+        type: integer
     type: object
   user_dto.CreateUserRequest:
     properties:
@@ -113,6 +390,11 @@ definitions:
       password:
         maxLength: 128
         minLength: 8
+        type: string
+      role:
+        enum:
+        - regular
+        - admin
         type: string
     required:
     - email
@@ -124,6 +406,19 @@ definitions:
         type: string
       id:
         type: string
+      role:
+        $ref: '#/definitions/models.Role'
+    type: object
+  user_dto.UpdateUserRequest:
+    properties:
+      current_password:
+        type: string
+      password:
+        maxLength: 128
+        minLength: 8
+        type: string
+    required:
+    - password
     type: object
 host: localhost:8080
 info:
@@ -133,6 +428,30 @@ info:
   version: "1.0"
 paths:
   /accounts:
+    get:
+      description: Returns all accounts belonging to a user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/account_dto.GetAccountResponse'
+            type: array
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Failed to fetch accounts
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get user accounts
+      tags:
+      - accounts
     post:
       consumes:
       - application/json
@@ -154,53 +473,18 @@ paths:
         "400":
           description: Invalid request body or input
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
         "500":
           description: Failed to create account
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Create an account
-      tags:
-      - accounts
-  /accounts/{account_id}:
-    get:
-      description: Returns an account by ID.
-      parameters:
-      - description: Account UUID
-        in: path
-        name: account_id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/account_dto.GetAccountResponse'
-        "400":
-          description: Invalid account ID
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "404":
-          description: Account not found
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Failed to get account
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Get account
       tags:
       - accounts
   /accounts/{id}:
@@ -218,22 +502,103 @@ paths:
         "400":
           description: Invalid account ID
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
         "404":
           description: Account not found
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
         "500":
           description: Failed to delete account
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Delete account
+      tags:
+      - accounts
+    get:
+      description: Returns an account by ID.
+      parameters:
+      - description: Account ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/account_dto.GetAccountResponse'
+        "400":
+          description: Invalid account ID
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Failed to get account
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get account
+      tags:
+      - accounts
+    patch:
+      consumes:
+      - application/json
+      description: Name, Monobank account id, currency or balance; only the owner's
+        account. The bank stays.
+      parameters:
+      - description: Account ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/account_dto.UpdateAccountRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/account_dto.GetAccountResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Edit an account
       tags:
       - accounts
   /accounts/{id}/transactions:
@@ -257,19 +622,445 @@ paths:
         "400":
           description: Invalid account ID
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
         "500":
           description: Failed to fetch transactions
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Get account transactions
       tags:
       - transactions
+  /admin/allowed-emails:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handlers.allowedEmailResponse'
+            type: array
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Admins only
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Who may register (admin)
+      tags:
+      - admin
+    post:
+      consumes:
+      - application/json
+      description: Role defaults to regular.
+      parameters:
+      - description: Email and role
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.addAllowedEmailRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            items:
+              $ref: '#/definitions/handlers.allowedEmailResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Admins only
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Already on the list
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Allow an email to register (admin)
+      tags:
+      - admin
+  /admin/allowed-emails/{id}:
+    delete:
+      description: |-
+        The email can no longer register. A registered user is removed too: their sessions end and they
+        cannot log in. Their accounts and operations stay in the database (soft delete). Not your own.
+      parameters:
+      - description: Entry ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handlers.allowedEmailResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Admins only
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not on the allow-list
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Take an email off the allow-list (admin)
+      tags:
+      - admin
+    patch:
+      consumes:
+      - application/json
+      description: Changes the allow-list entry and, when registered, the user. Not
+        your own.
+      parameters:
+      - description: Entry ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: New role
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.updateAllowedEmailRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handlers.allowedEmailResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Admins only
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not on the allow-list
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Change a role (admin)
+      tags:
+      - admin
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Returns an access token (15 minutes) and sets the refresh token
+        as an HttpOnly cookie (30 days).
+      parameters:
+      - description: Email and password
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/auth_dto.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/auth_dto.AccessTokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Wrong email or password
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Log in
+      tags:
+      - auth
+  /auth/logout:
+    post:
+      description: Revokes the refresh token's session and clears the cookie.
+      responses:
+        "204":
+          description: Logged out
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Log out
+      tags:
+      - auth
+  /auth/refresh:
+    post:
+      description: Uses the refresh token cookie; the cookie is rotated (a reused
+        one revokes the whole session family).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/auth_dto.AccessTokenResponse'
+        "401":
+          description: No valid refresh token
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: New access token
+      tags:
+      - auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Registers a new whitelisted user and issues auth session.
+      parameters:
+      - description: Register credentials
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/auth_dto.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/auth_dto.AccessTokenResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Register user
+      tags:
+      - auth
+  /imports/monobank:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/services.MonobankMonthsJob'
+        "204":
+          description: No fetch since the server started
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Progress of the user's last Monobank fetch
+      tags:
+      - imports
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Starts a background fetch of the account's statements for the months from..to (YYYY-MM, at most 24).
+        Monobank allows one statement call a minute, so this takes about a minute per month. The token is
+        the user's personal Monobank API token; it is used for this fetch only and never stored. Admins may leave
+        it empty to use the server's MONOBANK_TOKEN.
+      parameters:
+      - description: Account, token and months
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.monobankImportRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/services.MonobankMonthsJob'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: A fetch is already running
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Fetch Monobank statements by month
+      tags:
+      - imports
+  /imports/privatbank:
+    post:
+      consumes:
+      - multipart/form-data
+      description: |-
+        Multipart form: account_id and file (Privat24 statement export). With dry_run=true nothing is saved and
+        the reply shows how many operations are new. Operation ids are deterministic, so an overlapping
+        statement adds only the new lines.
+      parameters:
+      - description: PrivatBank account UUID
+        in: formData
+        name: account_id
+        required: true
+        type: string
+      - description: Statement .xlsx
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Preview only
+        in: query
+        name: dry_run
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.privatbankImportResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "413":
+          description: Over 10 MB
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Import a PrivatBank statement (.xlsx)
+      tags:
+      - imports
   /transactions:
+    get:
+      description: Returns all transactions belonging to accounts owned by the specified
+        user, ordered by occurrence time descending.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/transaction_dto.TransactionResponse'
+            type: array
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Failed to fetch transactions
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get user transactions
+      tags:
+      - transactions
     post:
       consumes:
       - application/json
@@ -291,15 +1082,25 @@ paths:
         "400":
           description: Invalid request body or input
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Not your account
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "409":
+          description: Transaction id already exists
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
         "500":
           description: Failed to create transaction
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Create a transaction
       tags:
       - transactions
@@ -318,29 +1119,138 @@ paths:
         "400":
           description: Invalid transaction ID
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
         "404":
           description: Transaction not found
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
         "500":
           description: Failed to delete transaction
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Delete transaction
       tags:
       - transactions
+    get:
+      parameters:
+      - description: Transaction ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/transaction_dto.TransactionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get a transaction
+      tags:
+      - transactions
+    patch:
+      consumes:
+      - application/json
+      description: |-
+        Changes what the user may correct: category, description, comment, MCC. Amounts and dates come from
+        the bank and stay as they are.
+      parameters:
+      - description: Transaction ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/transaction_dto.UpdateTransactionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/transaction_dto.TransactionResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Edit a transaction
+      tags:
+      - transactions
   /users:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/user_dto.CreateUserResponse'
+            type: array
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Admins only
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: All users (admin)
+      tags:
+      - users
     post:
       consumes:
       - application/json
-      description: Creates a new user.
+      description: 'Admin only: creates a user directly (no allow-list needed). Role
+        defaults to regular.'
       parameters:
       - description: User data
         in: body
@@ -359,27 +1269,33 @@ paths:
         "400":
           description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Admins only
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
         "409":
           description: Conflict
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Create user
       tags:
       - users
   /users/{id}:
     delete:
-      description: Deletes a user by their ID.
+      description: |-
+        Admin only. The user's sessions end and they cannot log in; their accounts and operations stay
+        (soft delete). Not yourself.
       parameters:
       - description: User ID
         in: path
@@ -394,20 +1310,31 @@ paths:
         "400":
           description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Admins only
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
         "404":
           description: Not Found
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Delete user
       tags:
       - users
     get:
-      description: Returns a user by their ID.
+      description: Your own user, or anyone's as an admin (another user answers 404
+        for regular users).
       parameters:
       - description: User ID
         in: path
@@ -424,89 +1351,150 @@ paths:
         "400":
           description: Invalid user ID
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
         "404":
           description: User not found
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
         "500":
           description: Failed to fetch user
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Get user
       tags:
       - users
-  /users/{id}/accounts:
-    get:
-      description: Returns all accounts belonging to a user.
+    patch:
+      consumes:
+      - application/json
+      description: |-
+        Your own password (current_password required), or as an admin anyone's. Roles change on the
+        allow-list (PATCH /admin/allowed-emails/{id}).
       parameters:
       - description: User ID
         in: path
         name: id
         required: true
         type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/account_dto.GetAccountResponse'
-            type: array
-        "400":
-          description: Invalid user ID
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "500":
-          description: Failed to fetch accounts
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Get user accounts
-      tags:
-      - accounts
-  /users/{id}/transactions:
-    get:
-      description: Returns all transactions belonging to accounts owned by the specified
-        user, ordered by occurrence time descending.
-      parameters:
-      - description: User ID
-        in: path
-        name: id
+      - description: New password
+        in: body
+        name: request
         required: true
-        type: string
+        schema:
+          $ref: '#/definitions/user_dto.UpdateUserRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            items:
-              $ref: '#/definitions/transaction_dto.TransactionResponse'
-            type: array
+            $ref: '#/definitions/user_dto.CreateUserResponse'
         "400":
-          description: Invalid user ID
+          description: Bad Request
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Wrong current password
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
         "500":
-          description: Failed to fetch transactions
+          description: Internal Server Error
           schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Get user transactions
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Change a password
       tags:
-      - transactions
+      - users
+  /users/me:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/user_dto.CreateUserResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: The logged-in user
+      tags:
+      - users
+  /webhooks/monobank:
+    get:
+      description: |-
+        Monobank calls it with GET when the webhook is set. With MONOBANK_WEBHOOK_SECRET set, the secret must
+        come as ?token=, ?secret=, X-Webhook-Secret or X-Token.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Wrong webhook secret
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Monobank webhook check
+      tags:
+      - webhooks
+    post:
+      consumes:
+      - application/json
+      description: Saves one live purchase (idempotent, same id as a month fetch)
+        and the account's balance.
+      parameters:
+      - description: Monobank StatementItem event
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/monobank_dto.WebhookRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Wrong webhook secret
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: No matching Monobank account
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Monobank statement item
+      tags:
+      - webhooks
+securityDefinitions:
+  BearerAuth:
+    description: '"Bearer <access_token>" from /auth/login, /auth/register or /auth/refresh'
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"

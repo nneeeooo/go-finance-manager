@@ -16,6 +16,18 @@ import (
 	"gorm.io/gorm"
 )
 
+// Login godoc
+// @Summary Log in
+// @Description Returns an access token (15 minutes) and sets the refresh token as an HttpOnly cookie (30 days).
+// @Tags auth
+// @Accept json
+// @Produce json
+// @Param request body auth_dto.LoginRequest true "Email and password"
+// @Success 200 {object} auth_dto.AccessTokenResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse "Wrong email or password"
+// @Failure 500 {object} ErrorResponse
+// @Router /auth/login [post]
 func Login(c *gin.Context) {
 	var req auth_dto.LoginRequest
 
@@ -62,10 +74,10 @@ func Login(c *gin.Context) {
 // @Produce json
 // @Param request body auth_dto.RegisterRequest true "Register credentials"
 // @Success 201 {object} auth_dto.AccessTokenResponse
-// @Failure 400 {object} map[string]string
-// @Failure 403 {object} map[string]string
-// @Failure 409 {object} map[string]string
-// @Failure 500 {object} map[string]string
+// @Failure 400 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
+// @Failure 409 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
 // @Router /auth/register [post]
 func Register(c *gin.Context) {
 	var req auth_dto.RegisterRequest
@@ -123,12 +135,22 @@ func Register(c *gin.Context) {
 	user := models.User{
 		Email:        email,
 		PasswordHash: passwordHash,
+		Role:         allowed.Role,
 	}
 
-	// 4. Save user and update registered_at in transaction
+	// 4. Save user and update registered_at in transaction. A user an admin removed and invited again gets the old
+	// account back (the email is unique across removed users too), with the new password and the entry's role.
 	now := time.Now()
 	err = db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&user).Error; err != nil {
+		var removed models.User
+		if err := tx.Unscoped().Where("email = ? AND deleted_at IS NOT NULL", email).First(&removed).Error; err == nil {
+			user.ID = removed.ID
+			if err := tx.Unscoped().Model(&removed).Updates(map[string]any{
+				"password_hash": passwordHash, "role": allowed.Role, "deleted_at": nil,
+			}).Error; err != nil {
+				return err
+			}
+		} else if err := tx.Create(&user).Error; err != nil {
 			return err
 		}
 
@@ -235,6 +257,15 @@ func createSessionAndRespond(c *gin.Context, db *gorm.DB, cfg *config.Config, us
 	})
 }
 
+// Refresh godoc
+// @Summary New access token
+// @Description Uses the refresh token cookie; the cookie is rotated (a reused one revokes the whole session family).
+// @Tags auth
+// @Produce json
+// @Success 200 {object} auth_dto.AccessTokenResponse
+// @Failure 401 {object} ErrorResponse "No valid refresh token"
+// @Failure 500 {object} ErrorResponse
+// @Router /auth/refresh [post]
 func Refresh(c *gin.Context) {
 	var (
 		ErrRefreshTokenExpired = errors.New("refresh token expired")
@@ -423,6 +454,13 @@ func Refresh(c *gin.Context) {
 	})
 }
 
+// Logout godoc
+// @Summary Log out
+// @Description Revokes the refresh token's session and clears the cookie.
+// @Tags auth
+// @Success 204 "Logged out"
+// @Failure 500 {object} ErrorResponse
+// @Router /auth/logout [post]
 func Logout(c *gin.Context) {
 	db := c.MustGet("db").(*gorm.DB)
 
