@@ -119,6 +119,29 @@ definitions:
       role:
         $ref: '#/definitions/models.Role'
     type: object
+  handlers.monobankAccountResponse:
+    properties:
+      balance:
+        type: integer
+      credit_limit:
+        type: integer
+      currency:
+        type: integer
+      iban:
+        type: string
+      id:
+        description: Monobank account id, the local account's external_id
+        type: string
+      linked_account_id:
+        description: the user's account with this external_id
+        type: string
+      masked_pan:
+        items:
+          type: string
+        type: array
+      type:
+        type: string
+    type: object
   handlers.monobankImportRequest:
     properties:
       account_id:
@@ -137,6 +160,12 @@ definitions:
     - account_id
     - from
     - to
+    type: object
+  handlers.monobankTokenRequest:
+    properties:
+      token:
+        description: 'personal Monobank token, never stored; empty: admins use MONOBANK_TOKEN'
+        type: string
     type: object
   handlers.privatbankImportResponse:
     properties:
@@ -256,7 +285,7 @@ definitions:
       started_at:
         type: string
       status:
-        description: running, done, error
+        description: running, done, error, cancelled
         type: string
     type: object
   services.PrivatbankRow:
@@ -918,6 +947,29 @@ paths:
       tags:
       - auth
   /imports/monobank:
+    delete:
+      description: Stops before the next Monobank call; months already fetched stay
+        saved.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/services.MonobankMonthsJob'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: No fetch is running
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Stop the user's running Monobank fetch
+      tags:
+      - imports
     get:
       produces:
       - application/json
@@ -980,12 +1032,62 @@ paths:
       summary: Fetch Monobank statements by month
       tags:
       - imports
+  /imports/monobank/accounts:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Calls Monobank /personal/client-info with the pasted token (used once, never stored; admins may leave
+        it empty to use MONOBANK_TOKEN) and marks which ones are already the user's accounts. Monobank allows
+        one such call a minute.
+      parameters:
+      - description: Token
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.monobankTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handlers.monobankAccountResponse'
+            type: array
+        "400":
+          description: No token, or Monobank refused it
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "429":
+          description: 'Monobank rate limit: try again in a minute'
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "502":
+          description: Monobank unreachable or failed
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List the Monobank accounts a token can read
+      tags:
+      - imports
   /imports/privatbank:
     post:
       consumes:
       - multipart/form-data
       description: |-
-        Multipart form: account_id and file (Privat24 statement export). With dry_run=true nothing is saved and
+        Multipart form: account_id and one or more file fields (Privat24 statement exports, 10 MB together).
+        With dry_run=true nothing is saved and
         the reply shows how many operations are new. Operation ids are deterministic, so an overlapping
         statement adds only the new lines.
       parameters:
@@ -994,7 +1096,7 @@ paths:
         name: account_id
         required: true
         type: string
-      - description: Statement .xlsx
+      - description: Statement .xlsx (repeat the field for several)
         in: formData
         name: file
         required: true

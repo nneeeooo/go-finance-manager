@@ -110,9 +110,39 @@ func UpsertTransactions(db *gorm.DB, transactions []models.Transaction) (created
 		return tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "id"}},
 			DoUpdates: clause.AssignmentColumns([]string{
-				"hold", "balance", "amount", "operation_amount", "cashback_amount", "commission_rate", "updated_at",
+				"hold", "balance", "amount", "operation_amount", "cashback_amount", "commission_rate", "occurred_at", "updated_at",
 			}),
 		}).CreateInBatches(&transactions, 200).Error
 	})
 	return created, err
+}
+
+// MonobankClientAccount: one card account from /personal/client-info
+type MonobankClientAccount struct {
+	ID           string   `json:"id"`
+	Type         string   `json:"type"` // black, white, platinum, iron, fop, yellow, eAid, madeInUkraine
+	CurrencyCode uint16   `json:"currencyCode"`
+	Balance      int64    `json:"balance"`
+	CreditLimit  int64    `json:"creditLimit"`
+	MaskedPan    []string `json:"maskedPan"`
+	IBAN         string   `json:"iban"`
+}
+
+// MonobankClientInfo: the token owner's name and card accounts (jars are left out: they have no card statements)
+type MonobankClientInfo struct {
+	Name     string                  `json:"name"`
+	Accounts []MonobankClientAccount `json:"accounts"`
+}
+
+// FetchMonobankClientInfo: the accounts the token can read; Monobank allows one call a minute
+func FetchMonobankClientInfo(client *resty.Client) (MonobankClientInfo, error) {
+	var info MonobankClientInfo
+	resp, err := client.R().SetResult(&info).Get("/personal/client-info")
+	if err != nil {
+		return info, err
+	}
+	if !resp.IsSuccess() {
+		return info, &MonobankHTTPError{Status: resp.StatusCode(), Body: resp.String()}
+	}
+	return info, nil
 }

@@ -860,6 +860,113 @@ const docTemplate = `{
                         }
                     }
                 }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Stops before the next Monobank call; months already fetched stay saved.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "imports"
+                ],
+                "summary": "Stop the user's running Monobank fetch",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/services.MonobankMonthsJob"
+                        }
+                    },
+                    "401": {
+                        "description": "Not logged in",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "No fetch is running",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/imports/monobank/accounts": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Calls Monobank /personal/client-info with the pasted token (used once, never stored; admins may leave\nit empty to use MONOBANK_TOKEN) and marks which ones are already the user's accounts. Monobank allows\none such call a minute.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "imports"
+                ],
+                "summary": "List the Monobank accounts a token can read",
+                "parameters": [
+                    {
+                        "description": "Token",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.monobankTokenRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handlers.monobankAccountResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "No token, or Monobank refused it",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not logged in",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "429": {
+                        "description": "Monobank rate limit: try again in a minute",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "502": {
+                        "description": "Monobank unreachable or failed",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
             }
         },
         "/imports/privatbank": {
@@ -869,7 +976,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Multipart form: account_id and file (Privat24 statement export). With dry_run=true nothing is saved and\nthe reply shows how many operations are new. Operation ids are deterministic, so an overlapping\nstatement adds only the new lines.",
+                "description": "Multipart form: account_id and one or more file fields (Privat24 statement exports, 10 MB together).\nWith dry_run=true nothing is saved and\nthe reply shows how many operations are new. Operation ids are deterministic, so an overlapping\nstatement adds only the new lines.",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -890,7 +997,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "file",
-                        "description": "Statement .xlsx",
+                        "description": "Statement .xlsx (repeat the field for several)",
                         "name": "file",
                         "in": "formData",
                         "required": true
@@ -1815,6 +1922,40 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.monobankAccountResponse": {
+            "type": "object",
+            "properties": {
+                "balance": {
+                    "type": "integer"
+                },
+                "credit_limit": {
+                    "type": "integer"
+                },
+                "currency": {
+                    "type": "integer"
+                },
+                "iban": {
+                    "type": "string"
+                },
+                "id": {
+                    "description": "Monobank account id, the local account's external_id",
+                    "type": "string"
+                },
+                "linked_account_id": {
+                    "description": "the user's account with this external_id",
+                    "type": "string"
+                },
+                "masked_pan": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.monobankImportRequest": {
             "type": "object",
             "required": [
@@ -1836,6 +1977,15 @@ const docTemplate = `{
                 },
                 "token": {
                     "description": "personal Monobank token, used for this fetch only and never stored; empty: admins use MONOBANK_TOKEN",
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.monobankTokenRequest": {
+            "type": "object",
+            "properties": {
+                "token": {
+                    "description": "personal Monobank token, never stored; empty: admins use MONOBANK_TOKEN",
                     "type": "string"
                 }
             }
@@ -2013,7 +2163,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
-                    "description": "running, done, error",
+                    "description": "running, done, error, cancelled",
                     "type": "string"
                 }
             }

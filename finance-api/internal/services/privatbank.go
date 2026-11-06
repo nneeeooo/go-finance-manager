@@ -53,9 +53,9 @@ func ParsePrivatbankXLSX(r io.Reader) ([]PrivatbankRow, error) {
 			continue
 		}
 		dateStr := strings.TrimSpace(row[0])
-		date, err := time.Parse("02.01.2006 15:04:05", dateStr)
+		date, err := time.ParseInLocation("02.01.2006 15:04:05", dateStr, kyiv) // Privat24 writes Kyiv time
 		if err != nil {
-			if date, err = time.Parse("02.01.2006 15:04", dateStr); err != nil {
+			if date, err = time.ParseInLocation("02.01.2006 15:04", dateStr, kyiv); err != nil {
 				return nil, fmt.Errorf("row %d: date %q", line, dateStr)
 			}
 		}
@@ -85,7 +85,11 @@ func ParsePrivatbankXLSX(r io.Reader) ([]PrivatbankRow, error) {
 // PrivatbankTransaction: the transaction row for one statement line. The id is deterministic (same formula as the
 // CLI importer), so importing an overlapping statement again adds only the new lines.
 func PrivatbankTransaction(accountID uuid.UUID, row PrivatbankRow) models.Transaction {
-	hashInput := fmt.Sprintf("privatbank:%s:%s:%d:%s", accountID, row.Date.Format(time.RFC3339), row.Amount, row.Description)
+	// The id hashes the statement's wall-clock time written as UTC, as before dates were read in Kyiv time,
+	// so operations imported earlier keep their ids
+	d := row.Date
+	wall := time.Date(d.Year(), d.Month(), d.Day(), d.Hour(), d.Minute(), d.Second(), 0, time.UTC)
+	hashInput := fmt.Sprintf("privatbank:%s:%s:%d:%s", accountID, wall.Format(time.RFC3339), row.Amount, row.Description)
 	return models.Transaction{
 		ID:          uuid.NewHash(sha256.New(), uuid.NameSpaceURL, []byte(hashInput), 8),
 		AccountID:   accountID,

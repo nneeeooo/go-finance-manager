@@ -69,7 +69,7 @@ type MonobankMonthsJob struct {
 	mu sync.Mutex
 
 	AccountID  uuid.UUID `json:"account_id"`
-	Status     string    `json:"status"` // running, done, error
+	Status     string    `json:"status"` // running, done, error, cancelled
 	Months     []string  `json:"months"`
 	MonthsDone int       `json:"months_done"`
 	Current    string    `json:"current,omitempty"`
@@ -79,6 +79,8 @@ type MonobankMonthsJob struct {
 	Error      string    `json:"error,omitempty"`
 	StartedAt  time.Time `json:"started_at"`
 	FinishedAt time.Time `json:"finished_at,omitzero"`
+
+	stop chan struct{} // closed by Cancel
 }
 
 func NewMonobankMonthsJob(accountID uuid.UUID, months []MonthRange) *MonobankMonthsJob {
@@ -86,7 +88,38 @@ func NewMonobankMonthsJob(accountID uuid.UUID, months []MonthRange) *MonobankMon
 	for i, m := range months {
 		labels[i] = m.Label
 	}
-	return &MonobankMonthsJob{AccountID: accountID, Status: "running", Months: labels, StartedAt: time.Now()}
+	return &MonobankMonthsJob{AccountID: accountID, Status: "running", Months: labels, StartedAt: time.Now(), stop: make(chan struct{})}
+}
+
+var errCancelled = errors.New("cancelled")
+
+// Cancel stops a running fetch before its next Monobank call; months already saved stay. False when not running.
+func (j *MonobankMonthsJob) Cancel() bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.Status != "running" {
+		return false
+	}
+	j.Status, j.Current, j.NextCallAt, j.FinishedAt = "cancelled", "", time.Time{}, time.Now()
+	close(j.stop)
+	return true
+}
+
+// Sleep waits d, or less when the fetch is cancelled meanwhile
+func (j *MonobankMonthsJob) Sleep(d time.Duration) {
+	select {
+	case <-time.After(d):
+	case <-j.stop:
+	}
+}
+
+func (j *MonobankMonthsJob) cancelled() bool {
+	select {
+	case <-j.stop:
+		return true
+	default:
+		return false
+	}
 }
 
 // Snapshot: a copy safe to encode while Run is writing
@@ -115,7 +148,7 @@ func (j *MonobankMonthsJob) Running() bool {
 
 // Run fetches every month (newest first, pages of 500 inside a month), saves the statements and, when the newest
 // month reaches today, sets the account balance from the latest statement. wait is the pause between Monobank
-// calls (its rate limit); sleep is time.Sleep outside tests.
+// calls (its rate limit); sleep is j.Sleep outside tests. Cancel stops it before the next call.
 func (j *MonobankMonthsJob) Run(db *gorm.DB, client *resty.Client, account models.Account, months []MonthRange, wait time.Duration, sleep func(time.Duration)) {
 	calls := 0
 	call := func(from, to int64) ([]models.MonobankStatement, error) {
@@ -123,6 +156,9 @@ func (j *MonobankMonthsJob) Run(db *gorm.DB, client *resty.Client, account model
 			if calls > 0 {
 				j.update(func(j *MonobankMonthsJob) { j.NextCallAt = time.Now().Add(wait) })
 				sleep(wait)
+			}
+			if j.cancelled() {
+				return nil, errCancelled
 			}
 			calls++
 			items, err := FetchMonobankStatementWindow(client, account.ExternalID, from, to)
@@ -134,13 +170,20 @@ func (j *MonobankMonthsJob) Run(db *gorm.DB, client *resty.Client, account model
 		}
 	}
 
+	// fail and done leave a cancelled job as Cancel set it
 	fail := func(err error) {
 		j.update(func(j *MonobankMonthsJob) {
+			if j.Status != "running" {
+				return
+			}
 			j.Status, j.Error, j.Current, j.FinishedAt = "error", err.Error(), "", time.Now()
 		})
 	}
 
 	for i, m := range months {
+		if j.cancelled() {
+			return
+		}
 		j.update(func(j *MonobankMonthsJob) { j.Current = m.Label })
 		to := m.To
 		for {
@@ -176,6 +219,9 @@ func (j *MonobankMonthsJob) Run(db *gorm.DB, client *resty.Client, account model
 		j.update(func(j *MonobankMonthsJob) { j.MonthsDone = i + 1 })
 	}
 	j.update(func(j *MonobankMonthsJob) {
+		if j.Status != "running" {
+			return
+		}
 		j.Status, j.Current, j.NextCallAt, j.FinishedAt = "done", "", time.Time{}, time.Now()
 	})
 }

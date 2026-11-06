@@ -38,7 +38,7 @@ function PrivatbankImport() {
   const resetTransactions = useDashboardStore((state) => state.resetTransactions);
 
   const [accountId, setAccountId] = useState(preselected ?? "");
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [preview, setPreview] = useState<Result | null>(null);
   const [imported, setImported] = useState<Result | null>(null);
   const [busy, setBusy] = useState(false);
@@ -56,10 +56,10 @@ function PrivatbankImport() {
   };
 
   const send = async (dryRun: boolean) => {
-    if (!file || !accountId) return;
+    if (files.length === 0 || !accountId) return;
     const form = new FormData();
     form.append("account_id", accountId);
-    form.append("file", file);
+    for (const f of files) form.append("file", f); // overlapping statements count each operation once
     setBusy(true);
     setError(null);
     const response = await apiFetch(`/imports/privatbank${dryRun ? "?dry_run=true" : ""}`, { method: "POST", body: form });
@@ -73,7 +73,8 @@ function PrivatbankImport() {
       setPreview(result);
     } else {
       setImported(result);
-      resetTransactions(); // the dashboard reloads with the new operations
+      resetTransactions(); // the dashboard reloads with the new operations; this clears the accounts too
+      fetchAccounts().catch(console.error);
     }
   };
 
@@ -84,7 +85,7 @@ function PrivatbankImport() {
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pb-4">
       <PageHeader
         title="Import PrivatBank statement"
-        description="Privat24 → Card → Statement → Excel (.xlsx). Operations already imported are skipped."
+        description="Privat24 → Card → Statement → Excel (.xlsx). Pick one or several files; operations already imported are skipped."
       />
 
       <Card>
@@ -113,19 +114,21 @@ function PrivatbankImport() {
             )}
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="statement">Statement .xlsx</Label>
+            <Label htmlFor="statement">Statements .xlsx</Label>
             <Input
               id="statement"
               type="file"
+              multiple
               accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={(e) => {
-                setFile(e.target.files?.[0] ?? null);
+                setFiles(Array.from(e.target.files ?? []));
                 restart();
               }}
             />
+            {files.length > 1 && <span className="text-xs text-muted-foreground">{files.length} files</span>}
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
-            <Button variant="outline" onClick={() => send(true)} disabled={busy || !file || !accountId}>
+            <Button variant="outline" onClick={() => send(true)} disabled={busy || files.length === 0 || !accountId}>
               {busy && !preview ? <Loader2 className="animate-spin" /> : <FileSpreadsheet />}
               Check
             </Button>

@@ -63,6 +63,8 @@ func Register(r *gin.Engine, cfg *config.Config) {
 		imports.POST("/privatbank", handlers.ImportPrivatbank)
 		imports.POST("/monobank", handlers.StartMonobankImport)
 		imports.GET("/monobank", handlers.MonobankImportStatus)
+		imports.DELETE("/monobank", handlers.CancelMonobankImport)
+		imports.POST("/monobank/accounts", handlers.ListMonobankAccounts)
 	}
 
 	// Admin: who may register and with which role

@@ -5,12 +5,15 @@ import (
 	"finance-api/internal/config"
 	"finance-api/internal/models"
 	"finance-api/internal/services"
+	"mime/multipart"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-resty/resty/v2"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -53,14 +56,15 @@ type privatbankImportResponse struct {
 
 // ImportPrivatbank godoc
 // @Summary Import a PrivatBank statement (.xlsx)
-// @Description Multipart form: account_id and file (Privat24 statement export). With dry_run=true nothing is saved and
+// @Description Multipart form: account_id and one or more file fields (Privat24 statement exports, 10 MB together).
+// @Description With dry_run=true nothing is saved and
 // @Description the reply shows how many operations are new. Operation ids are deterministic, so an overlapping
 // @Description statement adds only the new lines.
 // @Tags imports
 // @Accept multipart/form-data
 // @Produce json
 // @Param account_id formData string true "PrivatBank account UUID"
-// @Param file formData file true "Statement .xlsx"
+// @Param file formData file true "Statement .xlsx (repeat the field for several)"
 // @Param dry_run query bool false "Preview only"
 // @Success 200 {object} privatbankImportResponse
 // @Failure 400 {object} ErrorResponse
@@ -76,38 +80,47 @@ func ImportPrivatbank(c *gin.Context) {
 	if !ok {
 		return
 	}
-	header, err := c.FormFile("file")
+	form, err := c.MultipartForm()
 	if err != nil {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
-			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "The statement is over 10 MB"})
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "The statements are over 10 MB together"})
 			return
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Attach the statement .xlsx"})
 		return
 	}
-	if !strings.HasSuffix(strings.ToLower(header.Filename), ".xlsx") {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Expected an .xlsx statement"})
-		return
-	}
-	f, err := header.Open()
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot read the file"})
-		return
-	}
-	defer f.Close()
-	rows, err := services.ParsePrivatbankXLSX(f)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	files := form.File["file"]
+	if len(files) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Attach the statement .xlsx"})
 		return
 	}
 
-	txs := make([]models.Transaction, len(rows))
-	ids := make([]uuid.UUID, len(rows))
-	for i, r := range rows {
-		txs[i] = services.PrivatbankTransaction(account.ID, r)
-		ids[i] = txs[i].ID
+	// Several statements may overlap: the same operation has the same id, so it counts once
+	var rows []services.PrivatbankRow
+	var txs []models.Transaction
+	var ids []uuid.UUID
+	seen := map[uuid.UUID]bool{}
+	for _, header := range files {
+		if !strings.HasSuffix(strings.ToLower(header.Filename), ".xlsx") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": header.Filename + ": expected an .xlsx statement"})
+			return
+		}
+		fileRows, err := parseStatement(header)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": header.Filename + ": " + err.Error()})
+			return
+		}
+		for _, r := range fileRows {
+			tx := services.PrivatbankTransaction(account.ID, r)
+			if seen[tx.ID] {
+				continue
+			}
+			seen[tx.ID] = true
+			rows, txs, ids = append(rows, r), append(txs, tx), append(ids, tx.ID)
+		}
 	}
+	sort.SliceStable(rows, func(i, k int) bool { return rows[i].Date.After(rows[k].Date) })
 	resp := privatbankImportResponse{Total: len(rows), DryRun: c.Query("dry_run") == "true", From: rows[0].Date, To: rows[0].Date}
 	for _, r := range rows {
 		if r.Date.Before(resp.From) {
@@ -188,13 +201,8 @@ func StartMonobankImport(c *gin.Context) {
 		return
 	}
 
-	cfg := c.MustGet("config").(*config.Config)
-	token := strings.TrimSpace(req.Token)
-	if role, _ := c.Get("user_role"); token == "" && role == models.RoleAdmin {
-		token = cfg.MonobankToken
-	}
-	if token == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Paste your Monobank API token (api.monobank.ua)"})
+	client, ok := monobankClient(c, req.Token)
+	if !ok {
 		return
 	}
 
@@ -209,19 +217,135 @@ func StartMonobankImport(c *gin.Context) {
 	monobankJobs[userID] = job
 	monobankJobsMu.Unlock()
 
-	apiURL := cfg.MonobankApiUrl
-	if apiURL == "" {
-		apiURL = "https://api.monobank.ua"
-	}
-	wait := time.Duration(cfg.MonobankRateLimitSeconds) * time.Second
+	wait := time.Duration(c.MustGet("config").(*config.Config).MonobankRateLimitSeconds) * time.Second
 	if wait <= 0 {
 		wait = 60 * time.Second
 	}
 	db := c.MustGet("db").(*gorm.DB)
-	client := services.MonobankApiClientBuilder(apiURL, token)
-	go job.Run(db, client, account, months, wait, time.Sleep)
+	go job.Run(db, client, account, months, wait, job.Sleep)
 
 	c.JSON(http.StatusAccepted, job.Snapshot())
+}
+
+// monobankClient: a Monobank API client for the pasted token; empty token: admins use MONOBANK_TOKEN. Writes 400 otherwise.
+func monobankClient(c *gin.Context, rawToken string) (*resty.Client, bool) {
+	cfg := c.MustGet("config").(*config.Config)
+	token := strings.TrimSpace(rawToken)
+	if role, _ := c.Get("user_role"); token == "" && role == models.RoleAdmin {
+		token = cfg.MonobankToken
+	}
+	if token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Paste your Monobank API token (api.monobank.ua)"})
+		return nil, false
+	}
+	apiURL := cfg.MonobankApiUrl
+	if apiURL == "" {
+		apiURL = "https://api.monobank.ua"
+	}
+	return services.MonobankApiClientBuilder(apiURL, token), true
+}
+
+type monobankTokenRequest struct {
+	Token string `json:"token"` // personal Monobank token, never stored; empty: admins use MONOBANK_TOKEN
+}
+
+type monobankAccountResponse struct {
+	ID              string     `json:"id"` // Monobank account id, the local account's external_id
+	Type            string     `json:"type"`
+	Currency        uint16     `json:"currency"`
+	Balance         int64      `json:"balance"`
+	CreditLimit     int64      `json:"credit_limit"`
+	MaskedPan       []string   `json:"masked_pan"`
+	IBAN            string     `json:"iban"`
+	LinkedAccountID *uuid.UUID `json:"linked_account_id,omitempty"` // the user's account with this external_id
+}
+
+// ListMonobankAccounts godoc
+// @Summary List the Monobank accounts a token can read
+// @Description Calls Monobank /personal/client-info with the pasted token (used once, never stored; admins may leave
+// @Description it empty to use MONOBANK_TOKEN) and marks which ones are already the user's accounts. Monobank allows
+// @Description one such call a minute.
+// @Tags imports
+// @Accept json
+// @Produce json
+// @Param request body monobankTokenRequest true "Token"
+// @Success 200 {array} monobankAccountResponse
+// @Failure 400 {object} ErrorResponse "No token, or Monobank refused it"
+// @Failure 429 {object} ErrorResponse "Monobank rate limit: try again in a minute"
+// @Failure 502 {object} ErrorResponse "Monobank unreachable or failed"
+// @Security BearerAuth
+// @Failure 401 {object} ErrorResponse "Not logged in"
+// @Failure 500 {object} ErrorResponse
+// @Router /imports/monobank/accounts [post]
+func ListMonobankAccounts(c *gin.Context) {
+	var req monobankTokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+	client, ok := monobankClient(c, req.Token)
+	if !ok {
+		return
+	}
+	info, err := services.FetchMonobankClientInfo(client)
+	var httpErr *services.MonobankHTTPError
+	switch {
+	case errors.As(err, &httpErr) && (httpErr.Status == 401 || httpErr.Status == 403):
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Monobank refused the token: check it on api.monobank.ua"})
+		return
+	case errors.As(err, &httpErr) && httpErr.Status == 429:
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "Monobank allows one accounts request a minute: try again shortly"})
+		return
+	case err != nil:
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Monobank did not answer: try again later"})
+		return
+	}
+
+	db := c.MustGet("db").(*gorm.DB)
+	userID := c.MustGet("user_id").(uuid.UUID)
+	var mine []models.Account
+	if err := db.Where("user_id = ? AND bank = ? AND external_id <> ''", userID, models.BankMonobank).Find(&mine).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get accounts"})
+		return
+	}
+	linked := make(map[string]uuid.UUID, len(mine))
+	for _, a := range mine {
+		linked[a.ExternalID] = a.ID
+	}
+
+	out := make([]monobankAccountResponse, len(info.Accounts))
+	for i, a := range info.Accounts {
+		out[i] = monobankAccountResponse{
+			ID: a.ID, Type: a.Type, Currency: a.CurrencyCode, Balance: a.Balance, CreditLimit: a.CreditLimit,
+			MaskedPan: a.MaskedPan, IBAN: a.IBAN,
+		}
+		if id, ok := linked[a.ID]; ok {
+			out[i].LinkedAccountID = &id
+		}
+	}
+	c.JSON(http.StatusOK, out)
+}
+
+// CancelMonobankImport godoc
+// @Summary Stop the user's running Monobank fetch
+// @Description Stops before the next Monobank call; months already fetched stay saved.
+// @Tags imports
+// @Produce json
+// @Success 200 {object} services.MonobankMonthsJob
+// @Failure 404 {object} ErrorResponse "No fetch is running"
+// @Security BearerAuth
+// @Failure 401 {object} ErrorResponse "Not logged in"
+// @Router /imports/monobank [delete]
+func CancelMonobankImport(c *gin.Context) {
+	userID := c.MustGet("user_id").(uuid.UUID)
+	monobankJobsMu.Lock()
+	job := monobankJobs[userID]
+	monobankJobsMu.Unlock()
+	if job == nil || !job.Cancel() {
+		c.JSON(http.StatusNotFound, gin.H{"error": "No Monobank fetch is running"})
+		return
+	}
+	c.JSON(http.StatusOK, job.Snapshot())
 }
 
 // MonobankImportStatus godoc
@@ -243,4 +367,13 @@ func MonobankImportStatus(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, job.Snapshot())
+}
+
+func parseStatement(header *multipart.FileHeader) ([]services.PrivatbankRow, error) {
+	f, err := header.Open()
+	if err != nil {
+		return nil, errors.New("cannot read the file")
+	}
+	defer f.Close()
+	return services.ParsePrivatbankXLSX(f)
 }

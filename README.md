@@ -101,13 +101,18 @@ Both importers are part of the API and the web UI (the separate `monobank-import
 
 ### Monobank
 - **Live:** the Monobank webhook (`POST /api/v1/webhooks/monobank`) saves each purchase and the balance.
-- **History:** web UI → Import → Monobank (`POST /api/v1/imports/monobank`): pick the account and the months.
-  Monobank allows one statement call a minute, so each month takes about a minute; the page shows progress.
-  The personal token is used for that fetch only and never stored; admins may leave it empty to use `MONOBANK_TOKEN`.
+- **History:** web UI → Monobank history. Paste the personal token and press Show cards
+  (`POST /api/v1/imports/monobank/accounts`): the page lists your Monobank cards. Pick one; a card that is not
+  yet one of your accounts is added. Then pick the months (`POST /api/v1/imports/monobank`).
+  Monobank allows one statement call a minute, so each month takes about a minute; the page shows progress, and
+  Cancel (`DELETE /api/v1/imports/monobank`) stops it, keeping the months already saved.
+  The token is used for those calls only and never stored; admins may leave it empty to use `MONOBANK_TOKEN`.
 
 ### PrivatBank
-Web UI → Import → PrivatBank (`POST /api/v1/imports/privatbank`): upload the Privat24 statement `.xlsx`, check the
-preview, import. Operation ids are deterministic, so an overlapping statement adds only the new lines.
+Web UI → Import → PrivatBank (`POST /api/v1/imports/privatbank`): upload one or several Privat24 statement
+`.xlsx` files, check the preview, import. Statement times are read as Kyiv time. Operation ids are deterministic, so
+overlapping statements add only the new lines; importing a statement again also corrects the time of operations
+saved before that fix.
 
 ---
 

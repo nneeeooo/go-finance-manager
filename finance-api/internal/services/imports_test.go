@@ -2,7 +2,9 @@ package services_test
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"finance-api/internal/services"
+	"fmt"
 	"testing"
 	"time"
 
@@ -107,5 +109,22 @@ func TestMonthRanges(t *testing.T) {
 		if _, err := services.MonthRanges(bad[0], bad[1], now); err == nil {
 			t.Errorf("%v: expected an error", bad)
 		}
+	}
+}
+
+// PrivatBank statement times are Kyiv time; the operation id must stay what it was when they were read as UTC
+func TestPrivatbankKyivTimeKeepsID(t *testing.T) {
+	kyiv, _ := time.LoadLocation("Europe/Kyiv")
+	account := uuid.MustParse("01a1b2cd-78e5-71d7-81d4-8ea0d6e4c587")
+	row := services.PrivatbankRow{Date: time.Date(2026, 11, 5, 19, 41, 0, 0, kyiv), Amount: -20286, Description: "АТБ", Currency: "UAH"}
+	oldInput := fmt.Sprintf("privatbank:%s:%s:%d:%s", account, "2026-11-05T19:41:00Z", row.Amount, row.Description)
+	want := uuid.NewHash(sha256.New(), uuid.NameSpaceURL, []byte(oldInput), 8)
+
+	tx := services.PrivatbankTransaction(account, row)
+	if tx.ID != want {
+		t.Fatalf("id changed: %s, want %s", tx.ID, want)
+	}
+	if !tx.OccurredAt.Equal(time.Date(2026, 11, 5, 17, 41, 0, 0, time.UTC)) {
+		t.Fatalf("occurred_at %s, want 17:41 UTC", tx.OccurredAt.UTC())
 	}
 }
