@@ -1,14 +1,20 @@
 package services
 
 import (
+	"crypto/sha256"
 	"finance-api/internal/models"
 	"fmt"
 	"time"
 
 	"github.com/go-resty/resty/v2"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
-// TODO: remove this junk; useless if we proceed with webhook aka better way of doing things
+// MonobankStatementPageSize: Monobank returns at most this many items per call; a full page means older ones remain
+const MonobankStatementPageSize = 500
+
 func MonobankApiClientBuilder(apiUrl string, token string) *resty.Client {
 	client := resty.New().
 		SetBaseURL(apiUrl).
@@ -16,6 +22,16 @@ func MonobankApiClientBuilder(apiUrl string, token string) *resty.Client {
 		SetTimeout(30 * time.Second)
 
 	return client
+}
+
+// MonobankHTTPError: Monobank answered with a non-2xx status (429 means wait and retry)
+type MonobankHTTPError struct {
+	Status int
+	Body   string
+}
+
+func (e *MonobankHTTPError) Error() string {
+	return fmt.Sprintf("monobank returned %d: %s", e.Status, e.Body)
 }
 
 func FetchMonobankStatementWindow(
@@ -40,8 +56,63 @@ func FetchMonobankStatementWindow(
 	}
 
 	if !resp.IsSuccess() {
-		return nil, fmt.Errorf("monobank returned %s", resp.Status())
+		return nil, &MonobankHTTPError{Status: resp.StatusCode(), Body: resp.String()}
 	}
 
 	return statements, nil
+}
+
+// MonobankTransactionID: deterministic id of a statement item, the same the webhook and the old importer use,
+// so the same purchase arriving by webhook and by a month fetch is one row
+func MonobankTransactionID(accountID uuid.UUID, itemID string, unixTime int64) uuid.UUID {
+	return uuid.NewHash(sha256.New(), uuid.NameSpaceURL, []byte(fmt.Sprintf("%s:%s:%d", accountID, itemID, unixTime)), 8)
+}
+
+// MonobankTransaction: the transaction row for one statement item
+func MonobankTransaction(accountID uuid.UUID, item models.MonobankStatement) models.Transaction {
+	externalID := item.ID
+	return models.Transaction{
+		ID:                MonobankTransactionID(accountID, item.ID, item.Time),
+		AccountID:         accountID,
+		BankID:            models.BankMonobank,
+		ExternalID:        &externalID,
+		Amount:            item.Amount,
+		Currency:          item.CurrencyCode,
+		OperationAmount:   item.OperationAmount,
+		OperationCurrency: item.CurrencyCode,
+		Balance:           item.Balance,
+		CashbackAmount:    item.CashbackAmount,
+		CommissionRate:    item.CommissionRate,
+		MCC:               item.MCC,
+		Description:       item.Description,
+		Comment:           item.Comment,
+		Hold:              item.Hold,
+		OccurredAt:        time.Unix(item.Time, 0).UTC(),
+	}
+}
+
+// UpsertTransactions saves transactions by id: new ones are inserted, known ones get their changing fields
+// (hold, balance, amounts) updated. Returns how many were new.
+func UpsertTransactions(db *gorm.DB, transactions []models.Transaction) (created int, err error) {
+	if len(transactions) == 0 {
+		return 0, nil
+	}
+	ids := make([]uuid.UUID, len(transactions))
+	for i, t := range transactions {
+		ids[i] = t.ID
+	}
+	err = db.Transaction(func(tx *gorm.DB) error {
+		var existing int64
+		if err := tx.Unscoped().Model(&models.Transaction{}).Where("id IN ?", ids).Count(&existing).Error; err != nil {
+			return err
+		}
+		created = len(transactions) - int(existing)
+		return tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "id"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"hold", "balance", "amount", "operation_amount", "cashback_amount", "commission_rate", "updated_at",
+			}),
+		}).CreateInBatches(&transactions, 200).Error
+	})
+	return created, err
 }

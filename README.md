@@ -95,21 +95,19 @@ The project includes ready-to-use Quadlet files in `deploy/quadlets/`:
 
 ---
 
-## Importers
+## Imports
+
+Both importers are part of the API and the web UI (the separate `monobank-importer` and `privatbank-importer` programs are gone).
 
 ### Monobank
-Fetches statements directly from Monobank API:
-```bash
-cd monobank-importer
-go run ./cmd
-```
+- **Live:** the Monobank webhook (`POST /api/v1/webhooks/monobank`) saves each purchase and the balance.
+- **History:** web UI → Import → Monobank (`POST /api/v1/imports/monobank`): pick the account and the months.
+  Monobank allows one statement call a minute, so each month takes about a minute; the page shows progress.
+  The personal token is used for that fetch only and never stored; admins may leave it empty to use `MONOBANK_TOKEN`.
 
 ### PrivatBank
-Imports exported `.xlsx` statements:
-```bash
-cd privatbank-importer
-go run ./cmd <account-uuid> <statement.xlsx>
-```
+Web UI → Import → PrivatBank (`POST /api/v1/imports/privatbank`): upload the Privat24 statement `.xlsx`, check the
+preview, import. Operation ids are deterministic, so an overlapping statement adds only the new lines.
 
 ---
 

@@ -1,17 +1,14 @@
 package handlers
 
 import (
-	"crypto/sha256"
 	"errors"
 	"finance-api/internal/config"
 	monobank_dto "finance-api/internal/dto/monobank"
 	"finance-api/internal/models"
-	"fmt"
+	"finance-api/internal/services"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -35,7 +32,15 @@ func verifyWebhookSecret(c *gin.Context, cfg *config.Config) bool {
 	return provided == cfg.MonobankWebhookSecret
 }
 
-// MonobankWebhookCheck handles verification pings from Monobank (GET).
+// MonobankWebhookCheck godoc
+// @Summary Monobank webhook check
+// @Description Monobank calls it with GET when the webhook is set. With MONOBANK_WEBHOOK_SECRET set, the secret must
+// @Description come as ?token=, ?secret=, X-Webhook-Secret or X-Token.
+// @Tags webhooks
+// @Produce json
+// @Success 200 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse "Wrong webhook secret"
+// @Router /webhooks/monobank [get]
 func MonobankWebhookCheck(c *gin.Context) {
 	cfg := c.MustGet("config").(*config.Config)
 	if !verifyWebhookSecret(c, cfg) {
@@ -46,7 +51,18 @@ func MonobankWebhookCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
-// MonobankWebhookReceive handles live statement updates from Monobank (POST).
+// MonobankWebhookReceive godoc
+// @Summary Monobank statement item
+// @Description Saves one live purchase (idempotent, same id as a month fetch) and the account's balance.
+// @Tags webhooks
+// @Accept json
+// @Produce json
+// @Param request body monobank_dto.WebhookRequest true "Monobank StatementItem event"
+// @Success 200 {object} map[string]any
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse "Wrong webhook secret"
+// @Failure 404 {object} ErrorResponse "No matching Monobank account"
+// @Router /webhooks/monobank [post]
 func MonobankWebhookReceive(c *gin.Context) {
 	cfg := c.MustGet("config").(*config.Config)
 	if !verifyWebhookSecret(c, cfg) {
@@ -95,42 +111,14 @@ func MonobankWebhookReceive(c *gin.Context) {
 		return
 	}
 
-	// 2. Deterministic UUID calculation
-	hashInput := fmt.Sprintf(
-		"%s:%s:%d",
-		account.ID.String(),
-		item.ID,
-		item.Time,
-	)
-
-	txID := uuid.NewHash(
-		sha256.New(),
-		uuid.NameSpaceURL,
-		[]byte(hashInput),
-		8,
-	)
-
-	externalID := item.ID
-	occurredAt := time.Unix(item.Time, 0).UTC()
-
-	transaction := models.Transaction{
-		ID:                txID,
-		AccountID:         account.ID,
-		BankID:            models.BankMonobank,
-		ExternalID:        &externalID,
-		Amount:            item.Amount,
-		Currency:          item.CurrencyCode,
-		OperationAmount:   item.OperationAmount,
-		OperationCurrency: item.CurrencyCode,
-		Balance:           item.Balance,
-		CashbackAmount:    item.CashbackAmount,
-		CommissionRate:    item.CommissionRate,
-		MCC:               item.MCC,
-		Description:       item.Description,
-		Comment:           item.Comment,
-		Hold:              item.Hold,
-		OccurredAt:        occurredAt,
-	}
+	// 2. Same row (and deterministic id) as a month fetch of this statement item
+	transaction := services.MonobankTransaction(account.ID, models.MonobankStatement{
+		ID: item.ID, Time: item.Time, Description: item.Description, MCC: item.MCC, Amount: item.Amount,
+		OperationAmount: item.OperationAmount, CurrencyCode: item.CurrencyCode, CommissionRate: item.CommissionRate,
+		CashbackAmount: item.CashbackAmount, Balance: item.Balance, Hold: item.Hold, ReceiptID: item.ReceiptID,
+		Comment: item.Comment,
+	})
+	txID := transaction.ID
 
 	// 3. Upsert transaction (idempotent: updates hold, balance, etc. if already exists)
 	err := db.Transaction(func(tx *gorm.DB) error {
