@@ -161,14 +161,14 @@ var (
 type monobankImportRequest struct {
 	AccountID string `json:"account_id" binding:"required"`
 	Token     string `json:"token"` // personal Monobank token, used for this fetch only and never stored; empty: admins use MONOBANK_TOKEN
-	From      string `json:"from"`  // YYYY-MM; from and to both empty: update since the newest saved operation
-	To        string `json:"to"`    // YYYY-MM
+	From      string `json:"from"`  // YYYY-MM-DD (Kyiv); from and to both empty: update since the newest saved operation
+	To        string `json:"to"`    // YYYY-MM-DD (Kyiv), included
 }
 
 // StartMonobankImport godoc
 // @Summary Fetch Monobank statements
-// @Description Starts a background fetch of the account's statements. With from and to (YYYY-MM) it fetches those
-// @Description months; with both empty it updates: from 3 days before the newest saved operation (at least the last
+// @Description Starts a background fetch of the account's statements. With from and to (YYYY-MM-DD, Kyiv days, both
+// @Description included) it fetches those days; with both empty it updates: from 3 days before the newest saved operation (at least the last
 // @Description 31 days) to now, usually one call. The range is cut into Monobank's widest windows (31 days + 1 hour,
 // @Description at most 24 windows) and Monobank allows one call a minute, so each window takes about a minute.
 // @Description The token is the user's personal Monobank API token, used for this fetch only and never stored.
@@ -176,7 +176,7 @@ type monobankImportRequest struct {
 // @Tags imports
 // @Accept json
 // @Produce json
-// @Param request body monobankImportRequest true "Account, token and optional months"
+// @Param request body monobankImportRequest true "Account, token and optional days"
 // @Success 202 {object} services.MonobankFetchJob
 // @Failure 400 {object} ErrorResponse
 // @Failure 409 {object} ErrorResponse "A fetch is already running"
@@ -212,7 +212,7 @@ func StartMonobankImport(c *gin.Context) {
 		from, to = services.UpdateSpan(newest.At, now)
 	} else {
 		var err error
-		if from, to, err = services.MonthSpan(req.From, req.To, now); err != nil {
+		if from, to, err = services.DateSpan(req.From, req.To, now); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -274,18 +274,20 @@ type monobankAccountResponse struct {
 	ID              string     `json:"id"` // Monobank account id, the local account's external_id
 	Type            string     `json:"type"`
 	Currency        uint16     `json:"currency"`
-	Balance         int64      `json:"balance"`
-	CreditLimit     int64      `json:"credit_limit"`
+	Balance         int64      `json:"balance"`      // own money: Monobank's balance minus the credit limit, negative = owed
+	CreditLimit     int64      `json:"credit_limit"` // 0 = debit card
 	MaskedPan       []string   `json:"masked_pan"`
 	IBAN            string     `json:"iban"`
 	LinkedAccountID *uuid.UUID `json:"linked_account_id,omitempty"` // the user's account with this external_id
+	NewestSavedAt   *time.Time `json:"newest_saved_at,omitempty"`   // its newest saved operation: where an update starts
 }
 
 // ListMonobankAccounts godoc
 // @Summary List the Monobank accounts a token can read
 // @Description Calls Monobank /personal/client-info with the pasted token (used once, never stored; admins may leave
 // @Description it empty to use MONOBANK_TOKEN) and marks which ones are already the user's accounts. Monobank allows
-// @Description one such call a minute.
+// @Description one such call a minute. Balances are own money (Monobank's balance minus the credit limit); the
+// @Description user's linked accounts get the current limit and balance saved.
 // @Tags imports
 // @Accept json
 // @Produce json
@@ -330,18 +332,44 @@ func ListMonobankAccounts(c *gin.Context) {
 		return
 	}
 	linked := make(map[string]uuid.UUID, len(mine))
-	for _, a := range mine {
+	ids := make([]uuid.UUID, len(mine))
+	for i, a := range mine {
 		linked[a.ExternalID] = a.ID
+		ids[i] = a.ID
+	}
+	var newestRows []struct {
+		AccountID uuid.UUID
+		At        time.Time
+	}
+	if len(ids) > 0 {
+		if err := db.Model(&models.Transaction{}).Select("account_id, max(occurred_at) AS at").
+			Where("account_id IN ?", ids).Group("account_id").Scan(&newestRows).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read the newest operations"})
+			return
+		}
+	}
+	newest := make(map[uuid.UUID]time.Time, len(newestRows))
+	for _, r := range newestRows {
+		newest[r.AccountID] = r.At
 	}
 
 	out := make([]monobankAccountResponse, len(info.Accounts))
 	for i, a := range info.Accounts {
 		out[i] = monobankAccountResponse{
-			ID: a.ID, Type: a.Type, Currency: a.CurrencyCode, Balance: a.Balance, CreditLimit: a.CreditLimit,
+			ID: a.ID, Type: a.Type, Currency: a.CurrencyCode, Balance: a.Balance - a.CreditLimit, CreditLimit: a.CreditLimit,
 			MaskedPan: a.MaskedPan, IBAN: a.IBAN,
 		}
 		if id, ok := linked[a.ID]; ok {
 			out[i].LinkedAccountID = &id
+			// Keep the saved account current: the limit can change, and the balance is fresh here
+			if err := db.Model(&models.Account{}).Where("id = ?", id).
+				Updates(map[string]any{"credit_limit": a.CreditLimit, "balance": out[i].Balance}).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update the account"})
+				return
+			}
+			if at, ok := newest[id]; ok {
+				out[i].NewestSavedAt = &at
+			}
 		}
 	}
 	c.JSON(http.StatusOK, out)
@@ -349,7 +377,7 @@ func ListMonobankAccounts(c *gin.Context) {
 
 // CancelMonobankImport godoc
 // @Summary Stop the user's running Monobank fetch
-// @Description Stops before the next Monobank call; months already fetched stay saved.
+// @Description Stops before the next Monobank call; windows already fetched stay saved.
 // @Tags imports
 // @Produce json
 // @Success 200 {object} services.MonobankFetchJob

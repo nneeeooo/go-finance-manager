@@ -112,7 +112,7 @@ func MonobankWebhookReceive(c *gin.Context) {
 	}
 
 	// 2. Same row (and deterministic id) as a month fetch of this statement item
-	transaction := services.MonobankTransaction(account.ID, models.MonobankStatement{
+	transaction := services.MonobankTransaction(account, models.MonobankStatement{
 		ID: item.ID, Time: item.Time, Description: item.Description, MCC: item.MCC, Amount: item.Amount,
 		OperationAmount: item.OperationAmount, CurrencyCode: item.CurrencyCode, CommissionRate: item.CommissionRate,
 		CashbackAmount: item.CashbackAmount, Balance: item.Balance, Hold: item.Hold, ReceiptID: item.ReceiptID,
@@ -131,8 +131,8 @@ func MonobankWebhookReceive(c *gin.Context) {
 			return err
 		}
 
-		// Update latest account balance
-		if err := tx.Model(&account).Update("balance", item.Balance).Error; err != nil {
+		// Latest account balance: own money, as the row computed it (Monobank's minus the credit limit)
+		if err := tx.Model(&account).Update("balance", transaction.Balance).Error; err != nil {
 			return err
 		}
 

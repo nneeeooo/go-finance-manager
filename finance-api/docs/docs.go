@@ -806,7 +806,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Starts a background fetch of the account's statements. With from and to (YYYY-MM) it fetches those\nmonths; with both empty it updates: from 3 days before the newest saved operation (at least the last\n31 days) to now, usually one call. The range is cut into Monobank's widest windows (31 days + 1 hour,\nat most 24 windows) and Monobank allows one call a minute, so each window takes about a minute.\nThe token is the user's personal Monobank API token, used for this fetch only and never stored.\nAdmins may leave it empty to use the server's MONOBANK_TOKEN.",
+                "description": "Starts a background fetch of the account's statements. With from and to (YYYY-MM-DD, Kyiv days, both\nincluded) it fetches those days; with both empty it updates: from 3 days before the newest saved operation (at least the last\n31 days) to now, usually one call. The range is cut into Monobank's widest windows (31 days + 1 hour,\nat most 24 windows) and Monobank allows one call a minute, so each window takes about a minute.\nThe token is the user's personal Monobank API token, used for this fetch only and never stored.\nAdmins may leave it empty to use the server's MONOBANK_TOKEN.",
                 "consumes": [
                     "application/json"
                 ],
@@ -819,7 +819,7 @@ const docTemplate = `{
                 "summary": "Fetch Monobank statements",
                 "parameters": [
                     {
-                        "description": "Account, token and optional months",
+                        "description": "Account, token and optional days",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -873,7 +873,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Stops before the next Monobank call; months already fetched stay saved.",
+                "description": "Stops before the next Monobank call; windows already fetched stay saved.",
                 "produces": [
                     "application/json"
                 ],
@@ -910,7 +910,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Calls Monobank /personal/client-info with the pasted token (used once, never stored; admins may leave\nit empty to use MONOBANK_TOKEN) and marks which ones are already the user's accounts. Monobank allows\none such call a minute.",
+                "description": "Calls Monobank /personal/client-info with the pasted token (used once, never stored; admins may leave\nit empty to use MONOBANK_TOKEN) and marks which ones are already the user's accounts. Monobank allows\none such call a minute. Balances are own money (Monobank's balance minus the credit limit); the\nuser's linked accounts get the current limit and balance saved.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1759,10 +1759,16 @@ const docTemplate = `{
             ],
             "properties": {
                 "balance": {
+                    "description": "own money, negative = owed",
                     "type": "integer"
                 },
                 "bank": {
                     "$ref": "#/definitions/models.Bank"
+                },
+                "credit_limit": {
+                    "description": "0 = debit card",
+                    "type": "integer",
+                    "minimum": 0
                 },
                 "currency": {
                     "type": "integer"
@@ -1793,10 +1799,15 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "balance": {
+                    "description": "own money, negative = owed",
                     "type": "integer"
                 },
                 "bank": {
                     "$ref": "#/definitions/models.Bank"
+                },
+                "credit_limit": {
+                    "description": "0 = debit card",
+                    "type": "integer"
                 },
                 "currency": {
                     "type": "integer"
@@ -1823,6 +1834,10 @@ const docTemplate = `{
             "properties": {
                 "balance": {
                     "type": "integer"
+                },
+                "credit_limit": {
+                    "type": "integer",
+                    "minimum": 0
                 },
                 "currency": {
                     "type": "integer"
@@ -1932,9 +1947,11 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "balance": {
+                    "description": "own money: Monobank's balance minus the credit limit, negative = owed",
                     "type": "integer"
                 },
                 "credit_limit": {
+                    "description": "0 = debit card",
                     "type": "integer"
                 },
                 "currency": {
@@ -1957,6 +1974,10 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "newest_saved_at": {
+                    "description": "its newest saved operation: where an update starts",
+                    "type": "string"
+                },
                 "type": {
                     "type": "string"
                 }
@@ -1972,11 +1993,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "from": {
-                    "description": "YYYY-MM; from and to both empty: update since the newest saved operation",
+                    "description": "YYYY-MM-DD (Kyiv); from and to both empty: update since the newest saved operation",
                     "type": "string"
                 },
                 "to": {
-                    "description": "YYYY-MM",
+                    "description": "YYYY-MM-DD (Kyiv), included",
                     "type": "string"
                 },
                 "token": {
@@ -2149,6 +2170,10 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "finished_at": {
+                    "type": "string"
+                },
+                "newest_at": {
+                    "description": "the newest operation fetched: where the next update starts",
                     "type": "string"
                 },
                 "next_call_at": {

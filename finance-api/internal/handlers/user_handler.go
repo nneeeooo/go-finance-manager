@@ -222,16 +222,7 @@ func GetUserAccounts(c *gin.Context) {
 	responses := make([]account_dto.GetAccountResponse, len(accounts))
 
 	for i, account := range accounts {
-		responses[i] = account_dto.GetAccountResponse{
-			ID:                account.ID,
-			UserID:            account.UserID,
-			Bank:              account.Bank,
-			ExternalID:        account.ExternalID,
-			MonobankAccountID: account.ExternalID,
-			Name:              account.Name,
-			Currency:          account.Currency,
-			Balance:           account.Balance,
-		}
+		responses[i] = account_dto.FromModel(account)
 	}
 
 	c.JSON(http.StatusOK, responses)

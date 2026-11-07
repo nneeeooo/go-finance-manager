@@ -115,9 +115,9 @@ func TestStartMonobankImportValidation(t *testing.T) {
 		account, from, to string
 		status            int
 	}{
-		{privatID, "2026-01", "2026-02", http.StatusBadRequest}, // not a Monobank account
-		{monoID, "2026-01", "2026-02", http.StatusBadRequest},   // no Monobank account id
-		{"not-a-uuid", "2026-01", "2026-02", http.StatusBadRequest},
+		{privatID, "2026-01-01", "2026-02-28", http.StatusBadRequest}, // not a Monobank account
+		{monoID, "2026-01-01", "2026-02-28", http.StatusBadRequest},   // no Monobank account id
+		{"not-a-uuid", "2026-01-01", "2026-02-28", http.StatusBadRequest},
 	}
 	for _, c := range cases {
 		apitest.New().
@@ -184,7 +184,7 @@ func fakeMonobank(t *testing.T) {
 		}
 		switch {
 		case r.URL.Path == "/personal/client-info":
-			fmt.Fprint(w, `{"name":"Test","accounts":[{"id":"mono-acc-1","type":"black","currencyCode":980,"balance":12345,"creditLimit":0,"maskedPan":["537541******1234"],"iban":"UA00"}]}`)
+			fmt.Fprint(w, `{"name":"Test","accounts":[{"id":"mono-acc-1","type":"black","currencyCode":980,"balance":300000,"creditLimit":3500000,"maskedPan":["537541******1234"],"iban":"UA00"}]}`)
 		case strings.HasPrefix(r.URL.Path, "/personal/statement/mono-page/"):
 			fakePage(w, r)
 		case strings.HasPrefix(r.URL.Path, "/personal/statement/mono-acc-1/"):
@@ -234,6 +234,11 @@ func TestListMonobankAccounts(t *testing.T) {
 	if len(got) != 1 || got[0]["id"] != "mono-acc-1" || got[0]["linked_account_id"] != linked.ID {
 		t.Fatalf("accounts: %+v", got)
 	}
+	// A credit card: Monobank's 3 000 includes the 35 000 limit, so own money is -32 000; the linked account is updated
+	if got[0]["balance"] != float64(-3200000) || got[0]["credit_limit"] != float64(3500000) {
+		t.Fatalf("own balance: %v, limit %v", got[0]["balance"], got[0]["credit_limit"])
+	}
+	assertAccount(t, userID, linked.ID, -3200000, 3500000)
 	list("bad", http.StatusBadRequest) // Monobank refused the token
 	list("", http.StatusBadRequest)    // regular user without a token
 }
@@ -255,10 +260,10 @@ func TestCancelMonobankImport(t *testing.T) {
 		Expect(t).Status(http.StatusNotFound).End()
 
 	apitest.New().Handler(router).Post("/api/v1/imports/monobank").Header("Authorization", auth).
-		JSON(fmt.Sprintf(`{"account_id":%q,"token":"good","from":"2026-01","to":"2026-02"}`, acc.ID)).
+		JSON(fmt.Sprintf(`{"account_id":%q,"token":"good","from":"2026-01-01","to":"2026-02-28"}`, acc.ID)).
 		Expect(t).Status(http.StatusAccepted).End()
 
-	// Two months are two windows: the first is fetched at once, the second waits for the rate limit until cancelled
+	// 59 days are two windows: the first is fetched at once, the second waits for the rate limit until cancelled
 	status := func() (job struct {
 		Status      string `json:"status"`
 		WindowsDone int    `json:"windows_done"`
@@ -321,7 +326,7 @@ func TestMonobankUpdatePages(t *testing.T) {
 		ID string `json:"id"`
 	}
 	apitest.New().Handler(router).Post("/api/v1/accounts").Header("Authorization", auth).
-		JSON(`{"bank":1,"name":"Paged","currency":980,"external_id":"mono-page"}`).
+		JSON(`{"bank":1,"name":"Paged","currency":980,"external_id":"mono-page","credit_limit":1000}`).
 		Expect(t).Status(http.StatusCreated).
 		Assert(func(res *http.Response, _ *http.Request) error { return json.NewDecoder(res.Body).Decode(&acc) }).
 		End()
@@ -343,7 +348,8 @@ func TestMonobankUpdatePages(t *testing.T) {
 		Status         string
 		Calls, Fetched int
 		Created        int
-		WindowsDone    int `json:"windows_done"`
+		WindowsDone    int       `json:"windows_done"`
+		NewestAt       time.Time `json:"newest_at"`
 	}
 	deadline := time.Now().Add(10 * time.Second)
 	for job.Status != "done" && job.Status != "error" {
@@ -357,7 +363,25 @@ func TestMonobankUpdatePages(t *testing.T) {
 		router.ServeHTTP(rec, req)
 		_ = json.Unmarshal(rec.Body.Bytes(), &job)
 	}
-	if job.Status != "done" || job.Calls != 2 || job.Fetched != 502 || job.Created != 501 || job.WindowsDone != 1 {
+	if job.Status != "done" || job.Calls != 2 || job.Fetched != 502 || job.Created != 501 || job.WindowsDone != 1 || job.NewestAt.Unix() != 1_700_000_000 {
 		t.Fatalf("job: %+v, calls %v", job, pageCalls)
+	}
+	// Statement balance 777 includes the 1000 limit: the account keeps own money
+	assertAccount(t, userID, acc.ID, 777-1000, 1000)
+}
+
+func assertAccount(t *testing.T, userID, accountID string, balance, creditLimit int64) {
+	t.Helper()
+	var a struct {
+		Balance     int64 `json:"balance"`
+		CreditLimit int64 `json:"credit_limit"`
+	}
+	apitest.New().Handler(router).Get("/api/v1/accounts/"+accountID).
+		Header("Authorization", authHeaderForUser(t, userID)).
+		Expect(t).Status(http.StatusOK).
+		Assert(func(res *http.Response, _ *http.Request) error { return json.NewDecoder(res.Body).Decode(&a) }).
+		End()
+	if a.Balance != balance || a.CreditLimit != creditLimit {
+		t.Fatalf("account: balance %d, limit %d; want %d, %d", a.Balance, a.CreditLimit, balance, creditLimit)
 	}
 }

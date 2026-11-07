@@ -100,13 +100,17 @@ The project includes ready-to-use Quadlet files in `deploy/quadlets/`:
 Both importers are part of the API and the web UI (the separate `monobank-importer` and `privatbank-importer` programs are gone).
 
 ### Monobank
+Monobank reports a card's balance **including its credit limit** (35 000 limit, 32 000 spent: `balance` 3 000).
+The app stores own money, `balance − creditLimit` (here −32 000), on the account and on each operation, and keeps
+the account's `credit_limit` (refreshed whenever Show cards lists the card).
+
 - **Live:** the Monobank webhook (`POST /api/v1/webhooks/monobank`) saves each purchase and the balance.
 - **Update and history:** web UI → Monobank history. Paste the personal token and press Show cards
   (`POST /api/v1/imports/monobank/accounts`): the page lists your Monobank cards. Pick one; a card that is not
   yet one of your accounts is added. Then (`POST /api/v1/imports/monobank`):
   - **Update** (no `from`/`to`): from 3 days before the newest saved operation to now, and at least the last 31 days.
     Usually one call.
-  - **History** (`from`, `to` as YYYY-MM): those months.
+  - **Date range** (`from`, `to` as YYYY-MM-DD, Kyiv days, both included): those days.
 
   Monobank allows one statement call a minute, each for at most 31 days + 1 hour, so the range is cut into windows
   of exactly that size (fewest calls; at most 24, about 2 years). A window with 500 operations is paged from its

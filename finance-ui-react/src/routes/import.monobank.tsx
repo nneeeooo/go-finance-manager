@@ -1,16 +1,34 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { AlertCircle, Ban, CheckCircle2, Clock, CloudDownload, CreditCard, Loader2, RefreshCw, Search, Square } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { endOfDay, format, startOfDay, startOfMonth, subMonths } from "date-fns";
+import { uk } from "date-fns/locale";
+import type { DateRange } from "react-day-picker";
+import {
+  AlertCircle,
+  Ban,
+  CalendarIcon,
+  CheckCircle2,
+  Clock,
+  CloudDownload,
+  CreditCard,
+  History,
+  Loader2,
+  RefreshCw,
+  Search,
+  Square,
+} from "lucide-react";
 
 import { BankBadge } from "@/components/BankBadge";
 import { LoginRequired, PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { apiError, apiFetch } from "@/lib/api";
-import { formatMoney } from "@/lib/banks";
+import { creditLine, formatMoney } from "@/lib/banks";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 import { useDashboardStore } from "@/stores/dashboard-store";
@@ -29,6 +47,7 @@ type Job = {
   calls: number;
   fetched: number;
   created: number;
+  newest_at?: string; // the newest operation fetched
   next_call_at?: string;
   error?: string;
   started_at: string;
@@ -40,11 +59,12 @@ type MonoAccount = {
   id: string;
   type: string;
   currency: number;
-  balance: number;
+  balance: number; // own money (Monobank's minus the credit limit), negative = owed
   credit_limit: number;
   masked_pan: string[];
   iban: string;
   linked_account_id?: string;
+  newest_saved_at?: string; // the linked account's newest saved operation
 };
 
 const CARD_TYPES: Record<string, string> = {
@@ -65,16 +85,37 @@ const cardName = (a: MonoAccount) => {
 // Monobank: one statement call a minute, each for at most 31 days + 1 hour; the API cuts ranges the same way
 const WINDOW = 2682000;
 const MAX_WINDOWS = 24;
-const ym = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-/** Calls a months range needs: from the first day of from to the end of to, never past now (browser time) */
-const callsFor = (from: string, to: string, now: Date) => {
-  const [fy, fm] = from.split("-").map(Number);
-  const [ty, tm] = to.split("-").map(Number);
-  const start = new Date(fy, fm - 1, 1).getTime() / 1000;
-  const end = Math.min(new Date(ty, tm, 1).getTime() / 1000 - 1, now.getTime() / 1000);
-  return end < start ? 0 : Math.ceil((end - start + 1) / (WINDOW + 1));
-};
-const day = (unix: number) => new Date(unix * 1000).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "2-digit" });
+const UPDATE_OVERLAP = 3 * 86400; // an update also re-reads 3 days before the newest saved operation (holds)
+const FIRST_MONTH = new Date(2017, 10, 1); // Monobank launched in November 2017
+const callsFor = (from: number, to: number) => (to < from ? 0 : Math.ceil((to - from + 1) / (WINDOW + 1)));
+/** Where an update starts, as the API computes it: never less than one full window */
+const updateFrom = (newest: string | undefined, now: number) =>
+  Math.min(now - WINDOW, newest ? Date.parse(newest) / 1000 - UPDATE_OVERLAP : Infinity);
+const longDay = (d: Date) => format(d, "d MMM yyyy", { locale: uk });
+const day = (unix: number) => format(unix * 1000, "dd.MM.yy");
+const unix = (d: Date) => Math.floor(d.getTime() / 1000);
+
+/** A radio card, like the card picker */
+function Choice({ checked, onSelect, icon, title, children }: { checked: boolean; onSelect: () => void; icon: ReactNode; title: string; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={checked}
+      onClick={onSelect}
+      className={cn(
+        "flex items-start gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 [&_svg]:mt-0.5 [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground",
+        checked && "border-primary ring-1 ring-primary",
+      )}
+    >
+      {icon}
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="font-medium">{title}</span>
+        <span className="text-xs text-muted-foreground">{children}</span>
+      </span>
+    </button>
+  );
+}
 
 function MonobankImport() {
   const { account: preselected } = Route.useSearch();
@@ -84,21 +125,30 @@ function MonobankImport() {
   const fetchAccounts = useDashboardStore((state) => state.fetchAccounts);
   const resetTransactions = useDashboardStore((state) => state.resetTransactions);
 
-  const now = new Date();
+  const [today] = useState(() => new Date());
   const [token, setToken] = useState("");
   const [cards, setCards] = useState<MonoAccount[] | null>(null);
   const [cardId, setCardId] = useState("");
-  const [from, setFrom] = useState(ym(new Date(now.getFullYear(), now.getMonth() - 2, 1)));
-  const [to, setTo] = useState(ym(now));
+  const [mode, setMode] = useState<"update" | "range">("update");
+  const [range, setRange] = useState<DateRange | undefined>(() => ({ from: startOfMonth(subMonths(today, 2)), to: today }));
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"cards" | "update" | "months" | "cancel" | null>(null);
+  const [busy, setBusy] = useState<"cards" | "start" | "cancel" | null>(null);
   const [clock, setClock] = useState(() => Date.now()); // ticks the countdown while a fetch runs
 
   const card = cards?.find((c) => c.id === cardId);
-  const count = callsFor(from, to, now);
   const running = job?.status === "running";
   const localName = (id?: string) => localAccounts.find((a) => a.id === id)?.name;
+
+  const now = unix(today);
+  const updateStart = updateFrom(card?.newest_saved_at, now);
+  const count =
+    mode === "update"
+      ? callsFor(updateStart, now)
+      : range?.from && range.to
+        ? callsFor(unix(startOfDay(range.from)), Math.min(unix(endOfDay(range.to)), now))
+        : 0;
 
   useEffect(() => {
     if (initialized && accessToken) fetchAccounts().catch(console.error);
@@ -119,6 +169,16 @@ function MonobankImport() {
       const next: Job = await r.json();
       setJob(next);
       if (next.status !== "running") {
+        // The card's "New operations" now starts from what this fetch saved
+        const newest = next.newest_at;
+        if (newest)
+          setCards((list) =>
+            list?.map((c) =>
+              c.linked_account_id === next.account_id && (!c.newest_saved_at || Date.parse(newest) > Date.parse(c.newest_saved_at))
+                ? { ...c, newest_saved_at: newest }
+                : c,
+            ) ?? null,
+          );
         resetTransactions(); // clears the accounts too, so load them after
         fetchAccounts().catch(console.error);
       }
@@ -151,10 +211,9 @@ function MonobankImport() {
     setCardId(pick?.id ?? "");
   };
 
-  // update: since the newest saved operation (usually one call); months: the chosen range
-  const start = async (mode: "update" | "months") => {
+  const start = async () => {
     if (!card) return;
-    setBusy(mode);
+    setBusy("start");
     setError(null);
     // A card not yet among the user's accounts becomes one first
     let accountId = card.linked_account_id;
@@ -162,7 +221,7 @@ function MonobankImport() {
       const created = await apiFetch("/accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bank: 1, name: `Monobank ${cardName(card)}`, currency: card.currency, balance: card.balance, external_id: card.id }),
+        body: JSON.stringify({ bank: 1, name: `Monobank ${cardName(card)}`, currency: card.currency, balance: card.balance, credit_limit: card.credit_limit, external_id: card.id }),
       });
       if (!created.ok) {
         setBusy(null);
@@ -173,10 +232,12 @@ function MonobankImport() {
       setCards((list) => list?.map((c) => (c.id === card.id ? { ...c, linked_account_id: accountId } : c)) ?? null);
       fetchAccounts().catch(console.error);
     }
+    // No dates: the API updates since the newest saved operation
+    const days = mode === "range" && range?.from && range.to ? { from: format(range.from, "yyyy-MM-dd"), to: format(range.to, "yyyy-MM-dd") } : {};
     const response = await apiFetch("/imports/monobank", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ account_id: accountId, token: token.trim(), ...(mode === "months" ? { from, to } : {}) }),
+      body: JSON.stringify({ account_id: accountId, token: token.trim(), ...days }),
     });
     setBusy(null);
     if (!response.ok) {
@@ -203,19 +264,20 @@ function MonobankImport() {
   if (!accessToken) return <LoginRequired />;
 
   const wait = job?.next_call_at ? Math.max(0, Math.ceil((Date.parse(job.next_call_at) - clock) / 1000)) : 0;
+  const newest = card?.newest_saved_at ? new Date(card.newest_saved_at) : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pb-4">
       <PageHeader
         title="Fetch Monobank history"
-        description="Update pulls what is new since the last saved operation; history loads older months, 31 days per call."
+        description="Pick a card, then fetch its new operations or a date range. Monobank allows one call a minute, 31 days each."
       />
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BankBadge bank={1} className="size-7" />
-            1. Your Monobank cards
+            1. Card
           </CardTitle>
           <CardDescription>
             Get a personal token on <a href="https://api.monobank.ua/" target="_blank" rel="noreferrer" className="underline">api.monobank.ua</a>.
@@ -260,7 +322,8 @@ function MonobankImport() {
                   <CreditCard className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="font-medium">{cardName(c)}</span>
-                    <span className="tabular-nums text-sm">{formatMoney(c.balance, c.currency)}</span>
+                    <span className={cn("tabular-nums text-sm", c.balance < 0 && "text-red-600 dark:text-red-400")}>{formatMoney(c.balance, c.currency)}</span>
+                    {c.credit_limit > 0 && <span className="text-xs text-muted-foreground tabular-nums">{creditLine(c.balance, c.credit_limit, c.currency)}</span>}
                     <span className="truncate text-xs text-muted-foreground">
                       {c.linked_account_id ? `Saved as “${localName(c.linked_account_id) ?? "your account"}”` : "New: will be added to your accounts"}
                     </span>
@@ -272,44 +335,65 @@ function MonobankImport() {
         </CardContent>
       </Card>
 
-      <Card className={cn(!card && "opacity-60")}>
+      <Card className={cn(!card && "pointer-events-none opacity-60")} aria-disabled={!card}>
         <CardHeader>
-          <CardTitle>2. Fetch</CardTitle>
+          <CardTitle>2. What to fetch</CardTitle>
           <CardDescription>
-            Monobank allows one call a minute, each for up to 31 days. Saved operations are updated, not duplicated.
+            {card ? `For ${cardName(card)}.` : "Pick a card first."} Saved operations are updated, never duplicated.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-5">
-          <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={() => start("update")} disabled={busy !== null || running || !card}>
-              {busy === "update" ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-              Update
-            </Button>
-            <span className="text-sm text-muted-foreground">
-              New operations since the last saved one, plus 3 days back for holds. Usually one call.
-            </span>
+        <CardContent className="flex flex-col gap-4">
+          <div role="radiogroup" aria-label="What to fetch" className="grid gap-2 sm:grid-cols-2">
+            <Choice checked={mode === "update"} onSelect={() => setMode("update")} icon={<RefreshCw />} title="New operations">
+              {newest
+                ? `Newest saved: ${longDay(newest)}. Fetches from ${longDay(new Date(updateStart * 1000))}, so pending holds are refreshed.`
+                : "Nothing saved yet: fetches the last 31 days."}
+            </Choice>
+            <Choice checked={mode === "range"} onSelect={() => setMode("range")} icon={<History />} title="Date range">
+              Older history, or a period again. Up to about 2 years at once.
+            </Choice>
           </div>
-          <div className="grid gap-4 border-t pt-4 sm:grid-cols-2">
+
+          {mode === "range" && (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="from">History from</Label>
-              <Input id="from" type="month" required max={to} value={from} onChange={(e) => setFrom(e.target.value)} />
+              <Label>Period</Label>
+              <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+                <PopoverTrigger render={<Button variant="outline" className="w-full justify-start font-normal sm:w-80" />}>
+                  <CalendarIcon />
+                  {range?.from ? (range.to ? `${longDay(range.from)} – ${longDay(range.to)}` : `${longDay(range.from)} – …`) : "Pick the dates"}
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="range"
+                    numberOfMonths={2}
+                    captionLayout="dropdown"
+                    locale={uk}
+                    selected={range}
+                    onSelect={setRange}
+                    defaultMonth={range?.from ? subMonths(range.to ?? range.from, 1) : subMonths(today, 1)}
+                    startMonth={FIRST_MONTH}
+                    endMonth={today}
+                    disabled={{ after: today }}
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="to">To</Label>
-              <Input id="to" type="month" required min={from} max={ym(now)} value={to} onChange={(e) => setTo(e.target.value)} />
-            </div>
-            <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-              <Button variant="outline" onClick={() => start("months")} disabled={busy !== null || running || !card || count < 1 || count > MAX_WINDOWS}>
-                {busy === "months" ? <Loader2 className="animate-spin" /> : <CloudDownload />}
-                Fetch history
-              </Button>
-              {count > MAX_WINDOWS && <span className="text-sm text-destructive">About 2 years at most at once</span>}
-              {count >= 1 && count <= MAX_WINDOWS && (
-                <span className="text-sm text-muted-foreground">
-                  {count} {count === 1 ? "call" : "calls"}, about {count} min
-                </span>
-              )}
-            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-3 border-t pt-4">
+            <Button onClick={start} disabled={busy !== null || running || !card || count < 1 || count > MAX_WINDOWS}>
+              {busy === "start" ? <Loader2 className="animate-spin" /> : <CloudDownload />}
+              Fetch
+            </Button>
+            {count > MAX_WINDOWS ? (
+              <span className="text-sm text-destructive">Too long for one fetch: pick about 2 years at most</span>
+            ) : count === 0 ? (
+              <span className="text-sm text-muted-foreground">Pick the start and end dates</span>
+            ) : (
+              <span className="text-sm text-muted-foreground">
+                {count === 1 ? "1 call to Monobank, a few seconds" : `${count} calls to Monobank, about ${count - 1} min`}
+              </span>
+            )}
           </div>
         </CardContent>
       </Card>

@@ -107,23 +107,24 @@ func TestStatementWindows(t *testing.T) {
 	}
 }
 
-func TestMonthSpan(t *testing.T) {
+func TestDateSpan(t *testing.T) {
 	kyiv, _ := time.LoadLocation("Europe/Kyiv")
 	now := time.Date(2026, 11, 6, 15, 0, 0, 0, kyiv)
 
-	from, to, err := services.MonthSpan("2026-09", "2026-12", now)
+	// Kyiv days, both included; never past now
+	from, to, err := services.DateSpan("2026-09-15", "2026-12-31", now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if from != time.Date(2026, 9, 1, 0, 0, 0, 0, kyiv).Unix() || to != now.Unix() {
+	if from != time.Date(2026, 9, 15, 0, 0, 0, 0, kyiv).Unix() || to != now.Unix() {
 		t.Fatalf("span %d..%d", from, to)
 	}
-	_, to, _ = services.MonthSpan("2026-09", "2026-10", now)
+	_, to, _ = services.DateSpan("2026-10-01", "2026-10-31", now)
 	if to != time.Date(2026, 11, 1, 0, 0, 0, 0, kyiv).Unix()-1 {
-		t.Errorf("October ends %d", to)
+		t.Errorf("31 October ends %d", to)
 	}
-	for _, bad := range [][2]string{{"2026-10", "2026-09"}, {"2027-01", "2027-02"}, {"x", "2026-11"}} {
-		if _, _, err := services.MonthSpan(bad[0], bad[1], now); err == nil {
+	for _, bad := range [][2]string{{"2026-10-02", "2026-10-01"}, {"2027-01-01", "2027-02-01"}, {"2026-10", "2026-11-01"}} {
+		if _, _, err := services.DateSpan(bad[0], bad[1], now); err == nil {
 			t.Errorf("%v: expected an error", bad)
 		}
 	}

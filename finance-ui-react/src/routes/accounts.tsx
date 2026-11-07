@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiError, apiFetch } from "@/lib/api";
-import { BANK_IDS, BANKS, CURRENCIES, bankName, formatMoney, type BankId } from "@/lib/banks";
+import { BANK_IDS, BANKS, CURRENCIES, bankName, creditLine, formatMoney, parseMoney, type BankId } from "@/lib/banks";
 import { getCurrencySymbol } from "@/lib/chart-utils";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
@@ -193,6 +193,9 @@ function AccountView({ account, onChanged, onEdit }: { account: Account; onChang
         <span className={cn("text-2xl font-semibold tracking-tight tabular-nums", account.balance < 0 && "text-red-600 dark:text-red-400")}>
           {formatMoney(account.balance, account.currency)}
         </span>
+        {account.credit_limit ? (
+          <span className="text-xs text-muted-foreground tabular-nums">{creditLine(account.balance, account.credit_limit, account.currency)}</span>
+        ) : null}
         {externalId && (
           <span className="truncate font-mono text-xs text-muted-foreground" title={externalId}>
             id …{externalId.slice(-6)}
@@ -224,19 +227,21 @@ function AccountView({ account, onChanged, onEdit }: { account: Account; onChang
   );
 }
 
-/** Name, Monobank account id and balance; the bank stays */
+/** Name, Monobank account id, balance and credit limit; the bank stays */
 function EditAccountCard({ account, onDone, onCancel }: { account: Account; onDone: () => void; onCancel: () => void }) {
   const [name, setName] = useState(account.name);
   const [externalId, setExternalId] = useState(account.external_id || account.monobank_account_id || "");
   const [balance, setBalance] = useState((account.balance / 100).toFixed(2));
+  const [limit, setLimit] = useState(((account.credit_limit ?? 0) / 100).toFixed(2));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    const minor = Math.round(parseFloat(balance.replace(",", ".")) * 100);
-    if (Number.isNaN(minor)) {
-      setError("Balance must be a number");
+    const minor = parseMoney(balance);
+    const creditLimit = parseMoney(limit);
+    if (minor === null || creditLimit === null || creditLimit < 0) {
+      setError("Balance and limit must be numbers, the limit 0 or more");
       return;
     }
     setBusy(true);
@@ -244,7 +249,7 @@ function EditAccountCard({ account, onDone, onCancel }: { account: Account; onDo
     const response = await apiFetch(`/accounts/${account.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), external_id: externalId.trim(), balance: minor }),
+      body: JSON.stringify({ name: name.trim(), external_id: externalId.trim(), balance: minor, credit_limit: creditLimit }),
     });
     setBusy(false);
     if (!response.ok) {
@@ -275,8 +280,12 @@ function EditAccountCard({ account, onDone, onCancel }: { account: Account; onDo
             </div>
           )}
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor={`bal-${account.id}`}>Balance, {getCurrencySymbol(account.currency)}</Label>
+            <Label htmlFor={`bal-${account.id}`}>Own balance, {getCurrencySymbol(account.currency)} (negative = owed)</Label>
             <Input id={`bal-${account.id}`} inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor={`limit-${account.id}`}>Credit limit, {getCurrencySymbol(account.currency)} (0 for a debit card)</Label>
+            <Input id={`limit-${account.id}`} inputMode="decimal" value={limit} onChange={(e) => setLimit(e.target.value)} />
           </div>
           <div className="flex items-center gap-2">
             <Button type="submit" size="sm" disabled={busy || !name.trim()}>
@@ -300,6 +309,7 @@ function AddAccountCard({ onCreated }: { onCreated: () => void }) {
   const [currency, setCurrency] = useState(980);
   const [externalId, setExternalId] = useState("");
   const [balance, setBalance] = useState("");
+  const [limit, setLimit] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -308,9 +318,10 @@ function AddAccountCard({ onCreated }: { onCreated: () => void }) {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const minor = Math.round(parseFloat((balance || "0").replace(",", ".")) * 100);
-    if (Number.isNaN(minor)) {
-      setError("Balance must be a number");
+    const minor = parseMoney(balance);
+    const creditLimit = parseMoney(limit);
+    if (minor === null || creditLimit === null || creditLimit < 0) {
+      setError("Balance and limit must be numbers, the limit 0 or more");
       return;
     }
     setBusy(true);
@@ -318,7 +329,7 @@ function AddAccountCard({ onCreated }: { onCreated: () => void }) {
     const response = await apiFetch("/accounts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), bank, currency, external_id: externalId.trim(), balance: minor }),
+      body: JSON.stringify({ name: name.trim(), bank, currency, external_id: externalId.trim(), balance: minor, credit_limit: creditLimit }),
     });
     setBusy(false);
     if (!response.ok) {
@@ -377,8 +388,12 @@ function AddAccountCard({ onCreated }: { onCreated: () => void }) {
             </Select>
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="acc-balance">Balance now</Label>
+            <Label htmlFor="acc-balance">Own balance now (negative = owed)</Label>
             <Input id="acc-balance" inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} placeholder="0.00" />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="acc-limit">Credit limit</Label>
+            <Input id="acc-limit" inputMode="decimal" value={limit} onChange={(e) => setLimit(e.target.value)} placeholder="0 for a debit card" />
           </div>
           {bank === 1 && (
             <div className="flex flex-col gap-1.5 sm:col-span-2">

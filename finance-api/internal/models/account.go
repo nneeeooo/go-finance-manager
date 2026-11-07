@@ -29,7 +29,9 @@ type Account struct {
 	Name string `gorm:"type:varchar(100);not null" json:"name"`
 
 	Currency uint16 `gorm:"not null" json:"currency"` // ISO 4217 (980 = UAH)
-	Balance  int64  `gorm:"not null;default:0" json:"balance"`
+	// Balance: own money in minor units, negative = owed. Monobank reports balance + credit limit; we store it minus the limit.
+	Balance     int64 `gorm:"not null;default:0" json:"balance"`
+	CreditLimit int64 `gorm:"not null;default:0" json:"credit_limit"` // card credit limit, 0 = debit
 
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`

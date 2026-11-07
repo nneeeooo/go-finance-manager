@@ -68,8 +68,10 @@ func MonobankTransactionID(accountID uuid.UUID, itemID string, unixTime int64) u
 	return uuid.NewHash(sha256.New(), uuid.NameSpaceURL, []byte(fmt.Sprintf("%s:%s:%d", accountID, itemID, unixTime)), 8)
 }
 
-// MonobankTransaction: the transaction row for one statement item
-func MonobankTransaction(accountID uuid.UUID, item models.MonobankStatement) models.Transaction {
+// MonobankTransaction: the transaction row for one statement item. Monobank's balance includes the credit limit;
+// the row keeps own money (balance minus the account's current limit), like Account.Balance.
+func MonobankTransaction(account models.Account, item models.MonobankStatement) models.Transaction {
+	accountID := account.ID
 	externalID := item.ID
 	return models.Transaction{
 		ID:                MonobankTransactionID(accountID, item.ID, item.Time),
@@ -80,7 +82,7 @@ func MonobankTransaction(accountID uuid.UUID, item models.MonobankStatement) mod
 		Currency:          item.CurrencyCode,
 		OperationAmount:   item.OperationAmount,
 		OperationCurrency: item.CurrencyCode,
-		Balance:           item.Balance,
+		Balance:           item.Balance - account.CreditLimit,
 		CashbackAmount:    item.CashbackAmount,
 		CommissionRate:    item.CommissionRate,
 		MCC:               item.MCC,

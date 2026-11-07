@@ -22,7 +22,7 @@ const (
 	UpdateOverlap = 3 * 24 * time.Hour
 )
 
-// Month inputs are Kyiv months whatever the server's time zone
+// Date inputs are Kyiv days whatever the server's time zone
 var kyiv = func() *time.Location {
 	if loc, err := time.LoadLocation("Europe/Kyiv"); err == nil {
 		return loc
@@ -47,15 +47,15 @@ func StatementWindows(from, to int64) []StatementWindow {
 	return out
 }
 
-// MonthSpan: from the start of month from to the end of month to ("2006-01", Kyiv time), never past now
-func MonthSpan(from, to string, now time.Time) (int64, int64, error) {
-	start, err := time.ParseInLocation("2006-01", from, kyiv)
+// DateSpan: from the start of day from to the end of day to ("2006-01-02", Kyiv time), never past now
+func DateSpan(from, to string, now time.Time) (int64, int64, error) {
+	start, err := time.ParseInLocation(time.DateOnly, from, kyiv)
 	if err != nil {
-		return 0, 0, fmt.Errorf("from: expected YYYY-MM")
+		return 0, 0, fmt.Errorf("from: expected YYYY-MM-DD")
 	}
-	end, err := time.ParseInLocation("2006-01", to, kyiv)
+	end, err := time.ParseInLocation(time.DateOnly, to, kyiv)
 	if err != nil {
-		return 0, 0, fmt.Errorf("to: expected YYYY-MM")
+		return 0, 0, fmt.Errorf("to: expected YYYY-MM-DD")
 	}
 	if end.Before(start) {
 		return 0, 0, fmt.Errorf("to is before from")
@@ -63,7 +63,7 @@ func MonthSpan(from, to string, now time.Time) (int64, int64, error) {
 	if start.After(now) {
 		return 0, 0, fmt.Errorf("from is in the future")
 	}
-	last := end.AddDate(0, 1, 0).Add(-time.Second)
+	last := end.AddDate(0, 0, 1).Add(-time.Second)
 	if last.After(now) {
 		last = now
 	}
@@ -91,6 +91,7 @@ type MonobankFetchJob struct {
 	Calls       int               `json:"calls"` // Monobank calls so far: windows plus extra pages of busy windows
 	Fetched     int               `json:"fetched"`
 	Created     int               `json:"created"`
+	NewestAt    *time.Time        `json:"newest_at,omitempty"`   // the newest operation fetched: where the next update starts
 	NextCallAt  time.Time         `json:"next_call_at,omitzero"` // when the next Monobank call goes out (rate limit)
 	Error       string            `json:"error,omitempty"`
 	StartedAt   time.Time         `json:"started_at"`
@@ -140,7 +141,7 @@ func (j *MonobankFetchJob) Snapshot() MonobankFetchJob {
 	defer j.mu.Unlock()
 	return MonobankFetchJob{
 		AccountID: j.AccountID, Status: j.Status, Windows: append([]StatementWindow(nil), j.Windows...),
-		WindowsDone: j.WindowsDone, Calls: j.Calls, Fetched: j.Fetched, Created: j.Created, NextCallAt: j.NextCallAt,
+		WindowsDone: j.WindowsDone, Calls: j.Calls, Fetched: j.Fetched, Created: j.Created, NewestAt: j.NewestAt, NextCallAt: j.NextCallAt,
 		Error: j.Error, StartedAt: j.StartedAt, FinishedAt: j.FinishedAt,
 	}
 }
@@ -212,18 +213,25 @@ func (j *MonobankFetchJob) Run(db *gorm.DB, client *resty.Client, account models
 			}
 			txs := make([]models.Transaction, len(items))
 			for k, it := range items {
-				txs[k] = MonobankTransaction(account.ID, it)
+				txs[k] = MonobankTransaction(account, it)
 			}
 			created, err := UpsertTransactions(db, txs)
 			if err != nil {
 				fail(fmt.Errorf("%s–%s: save: %w", day(w.From), day(w.To), err))
 				return
 			}
-			// Items come newest first: the very first one of the run is the account's current balance
+			// Items come newest first: the very first one of the run is the account's current balance (own money)
 			if i == 0 && to == w.To && len(items) > 0 && w.To >= time.Now().Add(-time.Hour).Unix() {
-				db.Model(&models.Account{}).Where("id = ?", account.ID).Update("balance", items[0].Balance)
+				db.Model(&models.Account{}).Where("id = ?", account.ID).Update("balance", txs[0].Balance)
 			}
-			j.update(func(j *MonobankFetchJob) { j.Fetched += len(items); j.Created += created })
+			j.update(func(j *MonobankFetchJob) {
+				j.Fetched += len(items)
+				j.Created += created
+				if len(items) > 0 && (j.NewestAt == nil || items[0].Time > j.NewestAt.Unix()) {
+					at := time.Unix(items[0].Time, 0).UTC() // items come newest first
+					j.NewestAt = &at
+				}
+			})
 			if len(items) < MonobankStatementPageSize {
 				break
 			}

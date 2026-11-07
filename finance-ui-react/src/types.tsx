@@ -26,7 +26,8 @@ export type Account = {
   monobank_account_id?: string;
   name: string;
   currency: number;
-  balance: number;
+  balance: number; // own money, negative = owed
+  credit_limit?: number; // 0 or missing = debit
 };
 
 export type ChartMode = "all" | "quarters" | "months" | "days";

@@ -29,3 +29,15 @@ export function formatMoney(minor: number, currency: number): string {
   const value = (minor / 100).toLocaleString("uk-UA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `${value}${NBSP}${getCurrencySymbol(currency)}`;
 }
+
+/** "1 234,56" or "-1234.5" to minor units; empty is 0; null when not a number */
+export function parseMoney(text: string): number | null {
+  const minor = Math.round(parseFloat((text.trim() || "0").replace(/\s/g, "").replace(",", ".")) * 100);
+  return Number.isNaN(minor) ? null : minor;
+}
+
+/** "Limit 35 000,00 ₴ · available 3 000,00 ₴" for a credit card; empty for a debit one */
+export function creditLine(balance: number, creditLimit: number | undefined, currency: number): string {
+  if (!creditLimit) return "";
+  return `Limit ${formatMoney(creditLimit, currency)} · available ${formatMoney(creditLimit + balance, currency)}`;
+}

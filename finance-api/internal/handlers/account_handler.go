@@ -61,6 +61,7 @@ func CreateAccount(c *gin.Context) {
 		Name:              req.Name,
 		Currency:          req.Currency,
 		Balance:           req.Balance,
+		CreditLimit:       req.CreditLimit,
 	}
 
 	db := c.MustGet("db").(*gorm.DB)
@@ -122,16 +123,7 @@ func GetAccount(c *gin.Context) {
 		return
 	}
 
-	response := account_dto.GetAccountResponse{
-		ID:                account.ID,
-		UserID:            account.UserID,
-		Bank:              account.Bank,
-		ExternalID:        account.ExternalID,
-		MonobankAccountID: account.ExternalID,
-		Name:              account.Name,
-		Currency:          account.Currency,
-		Balance:           account.Balance,
-	}
+	response := account_dto.FromModel(account)
 
 	c.JSON(http.StatusOK, response)
 }
@@ -319,14 +311,14 @@ func UpdateAccount(c *gin.Context) {
 	if req.Balance != nil {
 		updates["balance"] = *req.Balance
 	}
+	if req.CreditLimit != nil {
+		updates["credit_limit"] = *req.CreditLimit
+	}
 	if len(updates) > 0 {
 		if err := db.Model(&account).Updates(updates).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update account"})
 			return
 		}
 	}
-	c.JSON(http.StatusOK, account_dto.GetAccountResponse{
-		ID: account.ID, UserID: account.UserID, Bank: account.Bank, ExternalID: account.ExternalID,
-		MonobankAccountID: account.ExternalID, Name: account.Name, Currency: account.Currency, Balance: account.Balance,
-	})
+	c.JSON(http.StatusOK, account_dto.FromModel(account))
 }
