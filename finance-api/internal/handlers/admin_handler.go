@@ -232,5 +232,8 @@ func revokeUser(tx *gorm.DB, userID uuid.UUID) error {
 	if err := tx.Model(&models.RefreshTokenFamily{}).Where("user_id = ? AND revoked_at IS NULL", userID).Update("revoked_at", &now).Error; err != nil {
 		return err
 	}
+	if err := tx.Delete(&models.Session{}, "user_id = ?", userID).Error; err != nil {
+		return err
+	}
 	return tx.Delete(&models.User{}, "id = ?", userID).Error
 }

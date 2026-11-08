@@ -29,6 +29,9 @@ import (
 // @Failure 500 {object} ErrorResponse
 // @Router /auth/login [post]
 func Login(c *gin.Context) {
+	if passwordLoginOff(c) {
+		return
+	}
 	var req auth_dto.LoginRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -80,6 +83,9 @@ func Login(c *gin.Context) {
 // @Failure 500 {object} ErrorResponse
 // @Router /auth/register [post]
 func Register(c *gin.Context) {
+	if passwordLoginOff(c) {
+		return
+	}
 	var req auth_dto.RegisterRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -267,6 +273,9 @@ func createSessionAndRespond(c *gin.Context, db *gorm.DB, cfg *config.Config, us
 // @Failure 500 {object} ErrorResponse
 // @Router /auth/refresh [post]
 func Refresh(c *gin.Context) {
+	if passwordLoginOff(c) {
+		return
+	}
 	var (
 		ErrRefreshTokenExpired = errors.New("refresh token expired")
 		ErrRefreshTokenReuse   = errors.New("refresh token reuse detected")
@@ -508,4 +517,14 @@ func Logout(c *gin.Context) {
 	utils.ClearRefreshTokenCookie(c)
 
 	c.Status(http.StatusNoContent)
+}
+
+// passwordLoginOff answers 403 and returns true when SSO is on: tokens come from the central auth service then.
+// The password code stays in place for installs without AUTH_ISSUER.
+func passwordLoginOff(c *gin.Context) bool {
+	if c.MustGet("config").(*config.Config).SSOEnabled() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Password login is disabled; sign in with SSO"})
+		return true
+	}
+	return false
 }

@@ -36,6 +36,9 @@ func TestSwaggerCoversAllRoutes(t *testing.T) {
 		t.Fatalf("only %d routes registered", len(r.Routes()))
 	}
 	for _, route := range r.Routes() {
+		if !strings.HasPrefix(route.Path, spec.BasePath+"/") {
+			continue // the SSO routes at /auth/* are outside the API base path
+		}
 		path := param.ReplaceAllString(strings.TrimPrefix(route.Path, spec.BasePath), "{$1}")
 		op, ok := spec.Paths[path][strings.ToLower(route.Method)]
 		if !ok {

@@ -3,6 +3,7 @@ import TransactionsTable from "@/components/TransactionsTable";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useDashboardStore } from "@/stores/dashboard-store";
+import { LoginRequired } from "@/components/PageHeader";
 import { useAuthStore } from "@/stores/auth-store";
 
 export const Route = createFileRoute("/")({
@@ -11,22 +12,22 @@ export const Route = createFileRoute("/")({
 
 function Home() {
   const { transactions, fetchTransactions } = useDashboardStore();
-  const { accessToken, initialized } = useAuthStore();
+  const { user, initialized } = useAuthStore();
 
   useEffect(() => {
-    if (!initialized || !accessToken) {
+    if (!initialized || !user) {
       return;
     }
 
     fetchTransactions().catch(console.error);
-  }, [initialized, accessToken, fetchTransactions]);
+  }, [initialized, user, fetchTransactions]);
 
   if (!initialized) {
     return <div>Loading...</div>;
   }
 
-  if (!accessToken) {
-    return <div>You need to log in.</div>;
+  if (!user) {
+    return <LoginRequired />;
   }
 
   return (

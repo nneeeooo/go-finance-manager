@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -23,6 +24,13 @@ type Config struct {
 	PostgresSSLMode  string
 
 	GinMode string
+
+	// SSO through the central auth service (OIDC); SSO is on when AuthIssuer is set
+	AuthIssuer        string
+	AuthClientID      string
+	AuthClientSecret  string
+	AuthRedirectURL   string
+	AuthPostLogoutURL string
 
 	MonobankApiUrl             string
 	MonobankToken              string
@@ -66,6 +74,11 @@ func Load(configPath string) *Config {
 		PostgresPassword:           os.Getenv("POSTGRES_PASSWORD"),
 		PostgresSSLMode:            os.Getenv("POSTGRES_SSLMODE"),
 		GinMode:                    os.Getenv("GIN_MODE"),
+		AuthIssuer:                 strings.TrimRight(os.Getenv("AUTH_ISSUER"), "/"),
+		AuthClientID:               os.Getenv("AUTH_CLIENT_ID"),
+		AuthClientSecret:           os.Getenv("AUTH_CLIENT_SECRET"),
+		AuthRedirectURL:            os.Getenv("AUTH_REDIRECT_URL"),
+		AuthPostLogoutURL:          os.Getenv("AUTH_POST_LOGOUT_URL"),
 		MonobankApiUrl:             os.Getenv("MONOBANK_API_URL"),
 		MonobankRateLimitSeconds:   rateLimit,
 		MonobankToken:              os.Getenv("MONOBANK_TOKEN"),
@@ -74,3 +87,6 @@ func Load(configPath string) *Config {
 		MonobankWebhookSecret:      os.Getenv("MONOBANK_WEBHOOK_SECRET"),
 	}
 }
+
+// SSOEnabled: login goes through the central auth service and password login is off
+func (c *Config) SSOEnabled() bool { return c.AuthIssuer != "" }

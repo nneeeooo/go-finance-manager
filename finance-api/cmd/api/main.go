@@ -58,6 +58,7 @@ func main() {
 			"Content-Type",
 			"Accept",
 			"Authorization",
+			"X-Requested-With",
 		},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,

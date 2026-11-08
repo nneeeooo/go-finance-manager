@@ -4,6 +4,7 @@ import (
 	"finance-api/internal/config"
 	"finance-api/internal/handlers"
 	"finance-api/internal/middleware"
+	"finance-api/internal/sso"
 
 	"github.com/gin-gonic/gin"
 )
@@ -12,7 +13,11 @@ import (
 // the DB for the role). Regular users reach only their own data; admin routes also need the admin role.
 func Register(r *gin.Engine, cfg *config.Config) {
 	api := r.Group("/api/v1")
-	authed := []gin.HandlerFunc{middleware.AuthMiddleware(cfg), middleware.LoadUser()}
+	var ssoClient *sso.Client
+	if cfg.SSOEnabled() {
+		ssoClient = sso.NewClient(cfg)
+	}
+	authed := []gin.HandlerFunc{middleware.Authenticate(cfg, ssoClient), middleware.LoadUser()}
 	admin := middleware.RequireAdmin()
 
 	// Auth
@@ -22,6 +27,19 @@ func Register(r *gin.Engine, cfg *config.Config) {
 		auth.POST("/login", handlers.Login)
 		auth.POST("/refresh", handlers.Refresh)
 		auth.POST("/logout", handlers.Logout)
+	}
+
+	// SSO (BFF) at /auth/*, outside /api/v1: the backend runs the OIDC code flow with the central auth service and
+	// the browser gets only the fin_session cookie. Off (404) when AUTH_ISSUER is not set.
+	if ssoClient != nil {
+		g := r.Group("/auth", func(c *gin.Context) {
+			c.Set("sso", ssoClient)
+			c.Next()
+		})
+		g.GET("/login", handlers.SSOLogin)
+		g.GET("/callback", handlers.SSOCallback)
+		g.POST("/logout", handlers.SSOLogout)
+		g.GET("/me", append(authed, handlers.GetMe)...)
 	}
 
 	// Users: yourself, or anyone as an admin

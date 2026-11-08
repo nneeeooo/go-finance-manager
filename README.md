@@ -85,6 +85,13 @@ The project includes ready-to-use Quadlet files in `deploy/quadlets/`:
    POSTGRES_DB=finance-db
    POSTGRES_USER=postgres
    POSTGRES_PASSWORD=your_postgres_password
+
+   # SSO (central auth service); see Authentication below
+   AUTH_ISSUER=https://auth.nneeeooo.pp.ua
+   AUTH_CLIENT_ID=go-finance
+   AUTH_CLIENT_SECRET=your_client_secret
+   AUTH_REDIRECT_URL=https://finance.nneeeooo.pp.ua/auth/callback
+   AUTH_POST_LOGOUT_URL=https://finance.nneeeooo.pp.ua/
    ```
 3. Reload systemd:
    ```bash
@@ -92,6 +99,28 @@ The project includes ready-to-use Quadlet files in `deploy/quadlets/`:
    systemctl --user restart finance-api finance-ui
    ```
 4. Point `cloudflared` ingress to `http://localhost:8085`.
+
+---
+
+## Authentication (SSO)
+
+Login goes through the central auth service (OIDC, Google behind it), backend-for-frontend style: the API runs the
+code flow (state + nonce + PKCE), keeps the tokens in the `sessions` table and gives the browser only an
+`fin_session` cookie (HttpOnly, SameSite=Lax, Secure over https). Set `AUTH_ISSUER` to turn it on; without it the
+old password login and the Bearer JWTs work as before.
+
+| Route (on the app origin) | |
+|---|---|
+| `GET /auth/login?return_to=/path` | starts the login (relative paths only, else `/`) |
+| `GET /auth/callback` | the auth service's redirect; sets the cookie |
+| `POST /auth/logout` | revokes the refresh token, drops the session, goes to the auth service's end_session |
+| `GET /auth/me` | the current user |
+
+Unsafe requests with the cookie need an `Origin` of the app or an `X-Requested-With` header. With SSO on, password
+login/register/refresh answer 403; the Bearer JWT (`APP_JWT_SECRET`) is still accepted for scripts and tests. Users
+are linked by the auth `sub`, else by verified email (existing users keep all data); a new email needs an
+allow-list entry. Local: start `nneeeooo-auth` on :8090, run `nneeeooo-auth admin dev-seed`, set the `AUTH_*` values
+from `.env.example`, open http://localhost:5173.
 
 ---
 

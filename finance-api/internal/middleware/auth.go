@@ -1,9 +1,12 @@
 package middleware
 
 import (
+	"errors"
 	"finance-api/internal/auth"
 	"finance-api/internal/config"
 	"finance-api/internal/models"
+	"finance-api/internal/sso"
+	"log"
 	"net/http"
 	"strings"
 
@@ -86,6 +89,38 @@ func RequireAdmin() gin.HandlerFunc {
 			})
 			return
 		}
+		c.Next()
+	}
+}
+
+// Authenticate: the guard of every logged-in route. A fin_session cookie (SSO session) wins: unsafe methods need
+// the CSRF check, and an expired auth access token is refreshed server-side. Without the cookie the request may
+// still carry the app's own Bearer JWT (scripts and tests; password login mints those, and it is off when SSO is
+// on). sso may be nil when SSO is off.
+func Authenticate(cfg *config.Config, client *sso.Client) gin.HandlerFunc {
+	bearer := AuthMiddleware(cfg)
+	return func(c *gin.Context) {
+		raw, err := c.Cookie(sso.SessionCookie)
+		if client == nil || err != nil || raw == "" {
+			bearer(c)
+			return
+		}
+		if !sso.CSRFOK(cfg, c.Request) {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Cross-site request rejected"})
+			return
+		}
+		userID, err := client.Authenticate(c.Request.Context(), c.MustGet("db").(*gorm.DB), raw)
+		switch {
+		case errors.Is(err, sso.ErrNoSession):
+			sso.ClearCookie(c.Writer, cfg, sso.SessionCookie, "/")
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Session expired"})
+			return
+		case err != nil:
+			log.Println("sso session:", err)
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "Auth service unavailable"})
+			return
+		}
+		c.Set("user_id", userID)
 		c.Next()
 	}
 }

@@ -1,73 +1,48 @@
 import { create } from "zustand";
-import { API_BASE_URL } from "@/lib/api";
+
+export type AuthUser = { id: string; email: string; role: "regular" | "admin" };
 
 type AuthState = {
-  accessToken: string | null;
-  loading: boolean;
+  user: AuthUser | null;
+  /** true once /auth/me has answered, so views do not flash the signed-out state */
   initialized: boolean;
 
-  setAccessToken: (accessToken: string) => void;
-  clearAccessToken: () => void;
-  refreshAccessToken: () => Promise<void>;
+  setUser: (user: AuthUser | null) => void;
+  loadUser: () => Promise<void>;
+  /** Ends the session on the API, then leaves for the auth service's logout page */
+  logout: () => Promise<void>;
 };
 
-// Shared between all calls to refreshAccessToken() in this browser tab.
-let refreshPromise: Promise<void> | null = null;
-
+// No token here or anywhere in JS: the session is an HttpOnly cookie, /auth/me says who is signed in.
 export const useAuthStore = create<AuthState>((set) => ({
-  accessToken: null,
-  loading: false,
+  user: null,
   initialized: false,
 
-  setAccessToken: (accessToken) => {
-    set({ accessToken });
-  },
+  setUser: (user) => set({ user }),
 
-  clearAccessToken: () => {
-    set({ accessToken: null });
-  },
-
-  refreshAccessToken: async () => {
-    // If a refresh is already happening, wait for it.
-    if (refreshPromise) {
-      return refreshPromise;
+  loadUser: async () => {
+    try {
+      const response = await fetch("/auth/me", { credentials: "include" });
+      set({ user: response.ok ? ((await response.json()) as AuthUser) : null });
+    } catch {
+      set({ user: null });
+    } finally {
+      set({ initialized: true });
     }
+  },
 
-    refreshPromise = (async () => {
-      set({ loading: true });
-
-      try {
-        const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-            method: "POST",
-            credentials: "include",
-          },
-        );
-
-        if (!response.ok) {
-          set({ accessToken: null });
-          return;
-        }
-
-        const data: {
-          access_token: string;
-          token_type: string;
-        } = await response.json();
-
-        set({
-          accessToken: data.access_token,
-        });
-      } catch {
-        set({
-          accessToken: null,
-        });
-      } finally {
-        set({ loading: false, initialized: true });
-
-        // Allow another refresh after this one finishes.
-        refreshPromise = null;
-      }
-    })();
-
-    return refreshPromise;
+  logout: async () => {
+    let target = "/";
+    try {
+      const response = await fetch("/auth/logout", {
+        method: "POST",
+        credentials: "include",
+        headers: { "X-Requested-With": "fetch", Accept: "application/json" },
+      });
+      if (response.ok) target = (await response.json()).redirect_url ?? "/";
+    } finally {
+      set({ user: null });
+    }
+    window.location.assign(target);
   },
 }));

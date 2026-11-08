@@ -8,6 +8,8 @@ Image=ghcr.io/nneeeooo/go-finance-manager-api:latest
 ContainerName=finance-api
 Network=db_net
 EnvironmentFile=%h/.config/finance/api.env
+# SSO client secret from the auth service (podman secret create go-finance-auth-client-secret -)
+Secret=go-finance-auth-client-secret,type=env,target=AUTH_CLIENT_SECRET
 Pull=newer
 
 [Install]

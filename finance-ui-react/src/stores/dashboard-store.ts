@@ -1,7 +1,7 @@
 import type { Transaction, Account } from "@/types";
 import { create } from "zustand";
 import { useAuthStore } from "@/stores/auth-store";
-import { API_BASE_URL } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 
 export type BankFilter = "all" | "monobank" | "privatbank";
 
@@ -60,28 +60,10 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   accounts: [],
 
   fetchAccounts: async () => {
-    let accessToken = useAuthStore.getState().accessToken;
-    if (!accessToken) return;
+    if (!useAuthStore.getState().user) return;
 
     try {
-      let response = await fetch(`${API_BASE_URL}/accounts`, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-
-      if (response.status === 401) {
-        await useAuthStore.getState().refreshAccessToken();
-        accessToken = useAuthStore.getState().accessToken;
-        if (!accessToken) return;
-
-        response = await fetch(`${API_BASE_URL}/accounts`, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        });
-      }
-
+      const response = await apiFetch("/accounts");
       if (response.ok) {
         const accounts: Account[] = await response.json();
         set({ accounts });
@@ -101,8 +83,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       return;
     }
 
-    let accessToken = useAuthStore.getState().accessToken;
-    if (!accessToken) {
+    if (!useAuthStore.getState().user) {
       return;
     }
 
@@ -114,27 +95,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         get().fetchAccounts().catch(console.error);
       }
 
-      let response = await fetch(`${API_BASE_URL}/transactions`, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-
-      // AT expired → refresh and retry once.
-      if (response.status === 401) {
-        await useAuthStore.getState().refreshAccessToken();
-        accessToken = useAuthStore.getState().accessToken;
-
-        if (!accessToken) {
-          throw new Error("Session expired");
-        }
-
-        response = await fetch(`${API_BASE_URL}/transactions`, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        });
-      }
+      const response = await apiFetch("/transactions");
 
       if (!response.ok) {
         throw new Error("Failed to fetch transactions");

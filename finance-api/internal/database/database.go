@@ -49,5 +49,6 @@ func Migrate(db *gorm.DB) error {
 		&models.RefreshTokenFamily{},
 		&models.RefreshToken{},
 		&models.AllowedEmail{},
+		&models.Session{},
 	)
 }

@@ -119,7 +119,7 @@ function Choice({ checked, onSelect, icon, title, children }: { checked: boolean
 
 function MonobankImport() {
   const { account: preselected } = Route.useSearch();
-  const accessToken = useAuthStore((state) => state.accessToken);
+  const user = useAuthStore((state) => state.user);
   const initialized = useAuthStore((state) => state.initialized);
   const localAccounts = useDashboardStore((state) => state.accounts);
   const fetchAccounts = useDashboardStore((state) => state.fetchAccounts);
@@ -151,14 +151,14 @@ function MonobankImport() {
         : 0;
 
   useEffect(() => {
-    if (initialized && accessToken) fetchAccounts().catch(console.error);
-  }, [initialized, accessToken, fetchAccounts]);
+    if (initialized && user) fetchAccounts().catch(console.error);
+  }, [initialized, user, fetchAccounts]);
 
   // The last fetch since the server started (it may still be running after a reload)
   useEffect(() => {
-    if (!initialized || !accessToken) return;
+    if (!initialized || !user) return;
     apiFetch("/imports/monobank").then(async (r) => r.status === 200 && setJob(await r.json()));
-  }, [initialized, accessToken]);
+  }, [initialized, user]);
 
   // Poll while it runs; refresh accounts and the dashboard when it ends
   useEffect(() => {
@@ -261,7 +261,7 @@ function MonobankImport() {
   };
 
   if (!initialized) return null;
-  if (!accessToken) return <LoginRequired />;
+  if (!user) return <LoginRequired />;
 
   const wait = job?.next_call_at ? Math.max(0, Math.ceil((Date.parse(job.next_call_at) - clock) / 1000)) : 0;
   const newest = card?.newest_saved_at ? new Date(card.newest_saved_at) : null;

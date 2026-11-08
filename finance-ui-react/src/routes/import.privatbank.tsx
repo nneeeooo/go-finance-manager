@@ -30,7 +30,7 @@ const day = (iso: string) => new Date(iso).toLocaleDateString("uk-UA");
 
 function PrivatbankImport() {
   const { account: preselected } = Route.useSearch();
-  const accessToken = useAuthStore((state) => state.accessToken);
+  const user = useAuthStore((state) => state.user);
   const initialized = useAuthStore((state) => state.initialized);
   const allAccounts = useDashboardStore((state) => state.accounts);
   const accounts = useMemo(() => allAccounts.filter((a) => a.bank === 2), [allAccounts]);
@@ -45,8 +45,8 @@ function PrivatbankImport() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (initialized && accessToken) fetchAccounts().catch(console.error);
-  }, [initialized, accessToken, fetchAccounts]);
+    if (initialized && user) fetchAccounts().catch(console.error);
+  }, [initialized, user, fetchAccounts]);
 
   // A new file or account starts over
   const restart = () => {
@@ -79,7 +79,7 @@ function PrivatbankImport() {
   };
 
   if (!initialized) return null;
-  if (!accessToken) return <LoginRequired />;
+  if (!user) return <LoginRequired />;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pb-4">

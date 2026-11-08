@@ -23,7 +23,7 @@ export const Route = createFileRoute("/accounts")({
 });
 
 function AccountsPage() {
-  const accessToken = useAuthStore((state) => state.accessToken);
+  const user = useAuthStore((state) => state.user);
   const initialized = useAuthStore((state) => state.initialized);
   const accounts = useDashboardStore((state) => state.accounts);
   const fetchAccounts = useDashboardStore((state) => state.fetchAccounts);
@@ -37,8 +37,8 @@ function AccountsPage() {
   };
 
   useEffect(() => {
-    if (initialized && accessToken) fetchAccounts().catch(console.error);
-  }, [initialized, accessToken, fetchAccounts]);
+    if (initialized && user) fetchAccounts().catch(console.error);
+  }, [initialized, user, fetchAccounts]);
 
   // Total balance per currency, hryvnia first
   const totals = useMemo(() => {
@@ -55,7 +55,7 @@ function AccountsPage() {
   );
 
   if (!initialized) return null;
-  if (!accessToken) return <LoginRequired />;
+  if (!user) return <LoginRequired />;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pb-4">

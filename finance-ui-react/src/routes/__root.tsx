@@ -24,11 +24,11 @@ function NavLink({ to, children }: { to: string; children: ReactNode }) {
 }
 
 function Root() {
-  const refreshAccessToken = useAuthStore((state) => state.refreshAccessToken);
+  const loadUser = useAuthStore((state) => state.loadUser);
 
   useEffect(() => {
-    refreshAccessToken();
-  }, [refreshAccessToken]);
+    loadUser();
+  }, [loadUser]);
 
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">

@@ -14,6 +14,9 @@ type User struct {
 
 	PasswordHash string `gorm:"type:text;not null"`
 
+	// Subject of the central auth service (SSO); set when the user first logs in through it
+	AuthSub *string `gorm:"type:varchar(64);uniqueIndex"`
+
 	Role Role `gorm:"type:varchar(16);not null;default:'regular'"`
 
 	CreatedAt time.Time

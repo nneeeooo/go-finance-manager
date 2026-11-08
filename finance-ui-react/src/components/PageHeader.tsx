@@ -1,3 +1,4 @@
+import { SignInCard } from "@/components/SignInCard";
 import type { ReactNode } from "react";
 
 /** Page title row: heading and one-line description on the left, the page's main action on the right */
@@ -15,5 +16,5 @@ export function PageHeader({ title, description, action }: { title: string; desc
 
 /** Shown on pages that need a login */
 export function LoginRequired() {
-  return <p className="text-sm text-muted-foreground">Log in on the User page to see this.</p>;
+  return <SignInCard />;
 }

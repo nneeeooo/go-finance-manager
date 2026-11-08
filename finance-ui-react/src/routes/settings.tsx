@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { Check, Copy, KeyRound, Loader2, LogOut, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { Check, Copy, Loader2, LogOut, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 
 import { LoginRequired, PageHeader } from "@/components/PageHeader";
 import { useTheme } from "@/components/ThemeProvider";
@@ -30,17 +30,17 @@ const ROLES = [
 ];
 
 function SettingsPage() {
-  const accessToken = useAuthStore((state) => state.accessToken);
+  const user = useAuthStore((state) => state.user);
   const initialized = useAuthStore((state) => state.initialized);
   const [me, setMe] = useState<User | null>(null);
 
   useEffect(() => {
-    if (!initialized || !accessToken) return;
+    if (!initialized || !user) return;
     apiFetch("/users/me").then(async (r) => r.ok && setMe(await r.json()));
-  }, [initialized, accessToken]);
+  }, [initialized, user]);
 
   if (!initialized) return null;
-  if (!accessToken) return <LoginRequired />;
+  if (!user) return <LoginRequired />;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pb-4">
@@ -56,41 +56,8 @@ function SettingsPage() {
 }
 
 function ProfileCard({ me }: { me: User | null }) {
-  const clearAccessToken = useAuthStore((state) => state.clearAccessToken);
+  const logout = useAuthStore((state) => state.logout);
   const resetTransactions = useDashboardStore((state) => state.resetTransactions);
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-
-  const changePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!me) return;
-    setBusy(true);
-    setMessage(null);
-    const response = await apiFetch(`/users/${me.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: next, current_password: current }),
-    });
-    setBusy(false);
-    if (!response.ok) {
-      setMessage({ ok: false, text: await apiError(response) });
-      return;
-    }
-    setCurrent("");
-    setNext("");
-    setMessage({ ok: true, text: "Password changed" });
-  };
-
-  const logout = async () => {
-    try {
-      await fetch(`${API_BASE_URL}/auth/logout`, { method: "POST", credentials: "include" });
-    } finally {
-      resetTransactions();
-      clearAccessToken();
-    }
-  };
 
   return (
     <Card>
@@ -102,26 +69,14 @@ function ProfileCard({ me }: { me: User | null }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <form onSubmit={changePassword} className="flex flex-col gap-3">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="current-password">Current password</Label>
-              <Input id="current-password" type="password" autoComplete="current-password" required value={current} onChange={(e) => setCurrent(e.target.value)} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="new-password">New password</Label>
-              <Input id="new-password" type="password" autoComplete="new-password" required minLength={8} maxLength={128} value={next} onChange={(e) => setNext(e.target.value)} />
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" variant="outline" disabled={busy || !me || next.length < 8 || !current}>
-              {busy ? <Loader2 className="animate-spin" /> : <KeyRound />}
-              Change password
-            </Button>
-            {message && <span className={message.ok ? "text-sm text-emerald-600 dark:text-emerald-400" : "text-sm text-destructive"}>{message.text}</span>}
-          </div>
-        </form>
-        <Button variant="ghost" className="self-start" onClick={logout}>
+        <Button
+          variant="ghost"
+          className="self-start"
+          onClick={() => {
+            resetTransactions();
+            void logout();
+          }}
+        >
           <LogOut />
           Sign out
         </Button>
