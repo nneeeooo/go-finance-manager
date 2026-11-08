@@ -18,6 +18,8 @@ RUN apk --no-cache add ca-certificates tzdata
 
 WORKDIR /app
 COPY --from=builder /bin/api /app/api
+# read at startup by the /docs (redoc) handler; the API panics without it
+COPY --from=builder /src/docs/swagger.json /app/docs/swagger.json
 
 EXPOSE 8080
 ENTRYPOINT ["/app/api"]
