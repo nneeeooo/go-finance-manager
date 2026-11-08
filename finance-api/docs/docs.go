@@ -1019,7 +1019,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.privatbankImportResponse"
+                            "$ref": "#/definitions/handlers.statementImportResponse"
                         }
                     },
                     "400": {
@@ -1048,6 +1048,275 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/imports/vstbank": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Multipart form: account_id and one or more file fields («Виписка по рахунку» of «Банк Власний Рахунок»).\nLike the PrivatBank import, and it also sets the card's credit limit and own balance from the statement.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "imports"
+                ],
+                "summary": "Import a VST Bank statement (.xlsx)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "VST Bank account UUID",
+                        "name": "account_id",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "Statement .xlsx (repeat the field for several)",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Preview only",
+                        "name": "dry_run",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.statementImportResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not logged in",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Account not found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Over 10 MB",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/loans": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "loans"
+                ],
+                "summary": "The user's loans",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/models.Loan"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Not logged in",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "A loan or installment the user pays off, entered from the contract (banks have no API for it).\nPayment k is due on the last day of the month first_due + k - 1.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "loans"
+                ],
+                "summary": "Add a loan",
+                "parameters": [
+                    {
+                        "description": "Loan",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.loanRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/models.Loan"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not logged in",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/loans/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "loans"
+                ],
+                "summary": "Delete a loan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Loan ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Not logged in",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Name, payment amounts and how many payments are paid (mark a payment: payments_paid + 1).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "loans"
+                ],
+                "summary": "Edit a loan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Loan ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to change",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.loanPatch"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.Loan"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not logged in",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/handlers.ErrorResponse"
                         }
@@ -1943,6 +2212,68 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.loanPatch": {
+            "type": "object",
+            "properties": {
+                "last_payment": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "payment": {
+                    "type": "integer"
+                },
+                "payments_paid": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handlers.loanRequest": {
+            "type": "object",
+            "required": [
+                "bank",
+                "currency",
+                "first_due",
+                "name",
+                "payment",
+                "payments_total"
+            ],
+            "properties": {
+                "bank": {
+                    "$ref": "#/definitions/models.Bank"
+                },
+                "currency": {
+                    "type": "integer"
+                },
+                "first_due": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "last_payment": {
+                    "description": "0: the same as payment",
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "name": {
+                    "type": "string"
+                },
+                "payment": {
+                    "type": "integer"
+                },
+                "payments_paid": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "payments_total": {
+                    "type": "integer"
+                },
+                "principal": {
+                    "type": "integer",
+                    "minimum": 0
+                }
+            }
+        },
         "handlers.monobankAccountResponse": {
             "type": "object",
             "properties": {
@@ -2015,7 +2346,7 @@ const docTemplate = `{
                 }
             }
         },
-        "handlers.privatbankImportResponse": {
+        "handlers.statementImportResponse": {
             "type": "object",
             "properties": {
                 "dry_run": {
@@ -2032,7 +2363,7 @@ const docTemplate = `{
                     "description": "newest operations first, up to 20",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/services.PrivatbankRow"
+                        "$ref": "#/definitions/services.StatementRow"
                     }
                 },
                 "to": {
@@ -2061,14 +2392,73 @@ const docTemplate = `{
                 1,
                 2,
                 3,
-                4
+                4,
+                5
+            ],
+            "x-enum-comments": {
+                "BankVSTBank": "АТ «ВСТ БАНК», «Банк Власний Рахунок»"
+            },
+            "x-enum-descriptions": [
+                "",
+                "",
+                "",
+                "",
+                "АТ «ВСТ БАНК», «Банк Власний Рахунок»"
             ],
             "x-enum-varnames": [
                 "BankMonobank",
                 "BankPrivatBank",
                 "BankCash",
-                "BankOther"
+                "BankOther",
+                "BankVSTBank"
             ]
+        },
+        "models.Loan": {
+            "type": "object",
+            "properties": {
+                "bank": {
+                    "$ref": "#/definitions/models.Bank"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "currency": {
+                    "type": "integer"
+                },
+                "first_due": {
+                    "description": "YYYY-MM-DD, any day of the first payment's month",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_payment": {
+                    "description": "the final payment, minor units",
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "payment": {
+                    "description": "regular monthly payment, minor units",
+                    "type": "integer"
+                },
+                "payments_paid": {
+                    "description": "how many are paid already",
+                    "type": "integer"
+                },
+                "payments_total": {
+                    "description": "number of payments",
+                    "type": "integer"
+                },
+                "principal": {
+                    "description": "amount borrowed, minor units",
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
         },
         "models.Role": {
             "type": "string",
@@ -2198,11 +2588,15 @@ const docTemplate = `{
                 }
             }
         },
-        "services.PrivatbankRow": {
+        "services.StatementRow": {
             "type": "object",
             "properties": {
                 "amount": {
                     "description": "minor units, negative = spent",
+                    "type": "integer"
+                },
+                "balance": {
+                    "description": "card balance after this operation (column «Залишок на кінець періоду»), minor units",
                     "type": "integer"
                 },
                 "category": {
@@ -2216,6 +2610,10 @@ const docTemplate = `{
                 },
                 "description": {
                     "type": "string"
+                },
+                "has_balance": {
+                    "description": "false when the statement has no balance column or the cell is empty",
+                    "type": "boolean"
                 }
             }
         },

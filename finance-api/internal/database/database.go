@@ -46,6 +46,7 @@ func Migrate(db *gorm.DB) error {
 		&models.User{},
 		&models.Account{},
 		&models.Transaction{},
+		&models.Loan{},
 		&models.RefreshTokenFamily{},
 		&models.RefreshToken{},
 		&models.AllowedEmail{},

@@ -131,6 +131,50 @@ definitions:
       role:
         $ref: '#/definitions/models.Role'
     type: object
+  handlers.loanPatch:
+    properties:
+      last_payment:
+        type: integer
+      name:
+        type: string
+      payment:
+        type: integer
+      payments_paid:
+        type: integer
+    type: object
+  handlers.loanRequest:
+    properties:
+      bank:
+        $ref: '#/definitions/models.Bank'
+      currency:
+        type: integer
+      first_due:
+        description: YYYY-MM-DD
+        type: string
+      last_payment:
+        description: '0: the same as payment'
+        minimum: 0
+        type: integer
+      name:
+        type: string
+      payment:
+        type: integer
+      payments_paid:
+        minimum: 0
+        type: integer
+      payments_total:
+        type: integer
+      principal:
+        minimum: 0
+        type: integer
+    required:
+    - bank
+    - currency
+    - first_due
+    - name
+    - payment
+    - payments_total
+    type: object
   handlers.monobankAccountResponse:
     properties:
       balance:
@@ -184,7 +228,7 @@ definitions:
         description: 'personal Monobank token, never stored; empty: admins use MONOBANK_TOKEN'
         type: string
     type: object
-  handlers.privatbankImportResponse:
+  handlers.statementImportResponse:
     properties:
       dry_run:
         type: boolean
@@ -196,7 +240,7 @@ definitions:
       preview:
         description: newest operations first, up to 20
         items:
-          $ref: '#/definitions/services.PrivatbankRow'
+          $ref: '#/definitions/services.StatementRow'
         type: array
       to:
         type: string
@@ -216,13 +260,56 @@ definitions:
     - 2
     - 3
     - 4
+    - 5
     format: int32
     type: integer
+    x-enum-comments:
+      BankVSTBank: АТ «ВСТ БАНК», «Банк Власний Рахунок»
+    x-enum-descriptions:
+    - ""
+    - ""
+    - ""
+    - ""
+    - АТ «ВСТ БАНК», «Банк Власний Рахунок»
     x-enum-varnames:
     - BankMonobank
     - BankPrivatBank
     - BankCash
     - BankOther
+    - BankVSTBank
+  models.Loan:
+    properties:
+      bank:
+        $ref: '#/definitions/models.Bank'
+      created_at:
+        type: string
+      currency:
+        type: integer
+      first_due:
+        description: YYYY-MM-DD, any day of the first payment's month
+        type: string
+      id:
+        type: string
+      last_payment:
+        description: the final payment, minor units
+        type: integer
+      name:
+        type: string
+      payment:
+        description: regular monthly payment, minor units
+        type: integer
+      payments_paid:
+        description: how many are paid already
+        type: integer
+      payments_total:
+        description: number of payments
+        type: integer
+      principal:
+        description: amount borrowed, minor units
+        type: integer
+      updated_at:
+        type: string
+    type: object
   models.Role:
     enum:
     - regular
@@ -309,10 +396,14 @@ definitions:
       windows_done:
         type: integer
     type: object
-  services.PrivatbankRow:
+  services.StatementRow:
     properties:
       amount:
         description: minor units, negative = spent
+        type: integer
+      balance:
+        description: card balance after this operation (column «Залишок на кінець
+          періоду»), minor units
         type: integer
       category:
         type: string
@@ -322,6 +413,10 @@ definitions:
         type: string
       description:
         type: string
+      has_balance:
+        description: false when the statement has no balance column or the cell is
+          empty
+        type: boolean
     type: object
   services.StatementWindow:
     properties:
@@ -1146,7 +1241,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/handlers.privatbankImportResponse'
+            $ref: '#/definitions/handlers.statementImportResponse'
         "400":
           description: Bad Request
           schema:
@@ -1172,6 +1267,182 @@ paths:
       summary: Import a PrivatBank statement (.xlsx)
       tags:
       - imports
+  /imports/vstbank:
+    post:
+      consumes:
+      - multipart/form-data
+      description: |-
+        Multipart form: account_id and one or more file fields («Виписка по рахунку» of «Банк Власний Рахунок»).
+        Like the PrivatBank import, and it also sets the card's credit limit and own balance from the statement.
+      parameters:
+      - description: VST Bank account UUID
+        in: formData
+        name: account_id
+        required: true
+        type: string
+      - description: Statement .xlsx (repeat the field for several)
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: Preview only
+        in: query
+        name: dry_run
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.statementImportResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Account not found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "413":
+          description: Over 10 MB
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Import a VST Bank statement (.xlsx)
+      tags:
+      - imports
+  /loans:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Loan'
+            type: array
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: The user's loans
+      tags:
+      - loans
+    post:
+      consumes:
+      - application/json
+      description: |-
+        A loan or installment the user pays off, entered from the contract (banks have no API for it).
+        Payment k is due on the last day of the month first_due + k - 1.
+      parameters:
+      - description: Loan
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.loanRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.Loan'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Add a loan
+      tags:
+      - loans
+  /loans/{id}:
+    delete:
+      parameters:
+      - description: Loan ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete a loan
+      tags:
+      - loans
+    patch:
+      consumes:
+      - application/json
+      description: 'Name, payment amounts and how many payments are paid (mark a payment:
+        payments_paid + 1).'
+      parameters:
+      - description: Loan ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to change
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.loanPatch'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.Loan'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Not logged in
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Edit a loan
+      tags:
+      - loans
   /transactions:
     get:
       description: Returns all transactions belonging to accounts owned by the specified

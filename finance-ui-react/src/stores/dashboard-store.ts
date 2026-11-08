@@ -3,7 +3,14 @@ import { create } from "zustand";
 import { useAuthStore } from "@/stores/auth-store";
 import { apiFetch } from "@/lib/api";
 
-export type BankFilter = "all" | "monobank" | "privatbank";
+export type BankFilter = "all" | "monobank" | "privatbank" | "vstbank";
+
+/** The bank id (as the API stores it) behind each dashboard bank filter */
+export const BANK_FILTER_IDS = { monobank: 1, privatbank: 2, vstbank: 5 } as const;
+
+/** The dashboard filter of a bank id; "all" for banks with no filter (cash, other) */
+export const bankFilterOf = (bankId: number): BankFilter =>
+  (Object.entries(BANK_FILTER_IDS).find(([, id]) => id === bankId)?.[0] as BankFilter | undefined) ?? "all";
 
 type DashboardState = {
   // filters
@@ -34,8 +41,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     let newAccountId = selectedAccountId;
     if (selectedAccountId !== "all" && bank !== "all") {
       const acc = accounts.find((a) => a.id === selectedAccountId);
-      const targetBankId = bank === "monobank" ? 1 : 2;
-      if (acc && acc.bank !== targetBankId) {
+      if (acc && acc.bank !== BANK_FILTER_IDS[bank]) {
         newAccountId = "all";
       }
     }
@@ -47,9 +53,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     if (selectedAccountId !== "all") {
       const acc = accounts.find((a) => a.id === selectedAccountId);
       if (acc) {
-        const bankName: BankFilter =
-          acc.bank === 1 ? "monobank" : acc.bank === 2 ? "privatbank" : "all";
-        set({ selectedAccountId, bank: bankName });
+        set({ selectedAccountId, bank: bankFilterOf(acc.bank) });
         return;
       }
     }

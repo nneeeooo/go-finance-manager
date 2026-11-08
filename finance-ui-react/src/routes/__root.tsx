@@ -1,6 +1,6 @@
 import { Link, Outlet, createRootRoute } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { FileSpreadsheet, LayoutDashboard, Settings, UserRound, Wallet, CloudDownload } from "lucide-react";
+import { CalendarClock, FileSpreadsheet, Landmark, LayoutDashboard, Settings, UserRound, Wallet } from "lucide-react";
 import { ThemeProvider } from "../components/ThemeProvider";
 import { buttonVariants } from "@/components/ui/button";
 import { useAuthStore } from "@/stores/auth-store";
@@ -42,13 +42,17 @@ function Root() {
             <Wallet />
             Accounts
           </NavLink>
-          <NavLink to="/import/privatbank">
+          <NavLink to="/import">
             <FileSpreadsheet />
-            PrivatBank import
+            Import
           </NavLink>
-          <NavLink to="/import/monobank">
-            <CloudDownload />
-            Monobank history
+          <NavLink to="/loans">
+            <Landmark />
+            Loans
+          </NavLink>
+          <NavLink to="/grace">
+            <CalendarClock />
+            Grace period
           </NavLink>
           <span className="ml-auto flex gap-1">
             <NavLink to="/settings">

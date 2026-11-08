@@ -65,6 +65,15 @@ func Register(r *gin.Engine, cfg *config.Config) {
 		accounts.GET("/:id/transactions", handlers.GetAccountTransactions)
 	}
 
+	// Loans: the user's own, entered by hand
+	loans := api.Group("/loans", authed...)
+	{
+		loans.POST("", handlers.CreateLoan)
+		loans.GET("", handlers.ListLoans)
+		loans.PATCH("/:id", handlers.UpdateLoan)
+		loans.DELETE("/:id", handlers.DeleteLoan)
+	}
+
 	// Transactions: of the user's own accounts
 	transactions := api.Group("/transactions", authed...)
 	{
@@ -79,6 +88,7 @@ func Register(r *gin.Engine, cfg *config.Config) {
 	imports := api.Group("/imports", authed...)
 	{
 		imports.POST("/privatbank", handlers.ImportPrivatbank)
+		imports.POST("/vstbank", handlers.ImportVstbank)
 		imports.POST("/monobank", handlers.StartMonobankImport)
 		imports.GET("/monobank", handlers.MonobankImportStatus)
 		imports.DELETE("/monobank", handlers.CancelMonobankImport)

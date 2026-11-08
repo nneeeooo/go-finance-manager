@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useDashboardStore, type BankFilter } from "@/stores/dashboard-store";
+import { BANK_FILTER_IDS, useDashboardStore, type BankFilter } from "@/stores/dashboard-store";
 import {
   Select,
   SelectContent,
@@ -64,7 +64,7 @@ export function FinanceChart({ transactions }: FinanceChartProps) {
     const filteredAccounts =
       bank === "all"
         ? accounts
-        : accounts.filter((a) => (bank === "monobank" ? a.bank === 1 : a.bank === 2));
+        : accounts.filter((a) => a.bank === BANK_FILTER_IDS[bank]);
 
     return [
       ...base,
@@ -85,19 +85,18 @@ export function FinanceChart({ transactions }: FinanceChartProps) {
     [selectedFilteredTransactions, periodFilter],
   );
 
-  const categoryData = useMemo(() => {
-    const periodFiltered = filterTransactionsByPeriod(
-      selectedFilteredTransactions,
-      periodFilter,
-    );
-    return calculateCategoryBreakdown(periodFiltered);
-  }, [selectedFilteredTransactions, periodFilter]);
+  const periodTransactions = useMemo(
+    () => filterTransactionsByPeriod(selectedFilteredTransactions, periodFilter),
+    [selectedFilteredTransactions, periodFilter],
+  );
+
+  const categoryData = useMemo(() => calculateCategoryBreakdown(periodTransactions), [periodTransactions]);
 
   const periodDescription = getPeriodDescription(periodFilter);
 
   return (
     <div className="rounded-lg border bg-card text-card-foreground shadow-xs">
-      <FinanceSummary transactions={transactions} />
+      <FinanceSummary transactions={periodTransactions} period={periodDescription} />
 
       <div className="p-4 sm:p-6">
         <Tabs

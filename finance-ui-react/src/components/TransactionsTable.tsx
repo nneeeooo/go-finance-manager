@@ -28,6 +28,8 @@ type Transaction = {
   occurred_at: string;
 };
 
+const BANK_BADGES: Record<number, string> = { 1: "monobank", 2: "privatbank", 5: "vst" };
+
 type TransactionsTableProps = {
   transactions: Transaction[];
 };
@@ -118,10 +120,10 @@ function TransactionsTable({ transactions }: TransactionsTableProps) {
                     <Badge
                       variant="secondary"
                       className={
-                        transaction.bank_id === 2 ? "bg-green-700" : ""
+                        transaction.bank_id === 2 ? "bg-green-700" : transaction.bank_id === 5 ? "bg-violet-700" : ""
                       }
                     >
-                      {transaction.bank_id === 2 ? "privatbank" : "monobank"}
+                      {BANK_BADGES[transaction.bank_id] ?? "other"}
                     </Badge>
                   </TableCell>
 

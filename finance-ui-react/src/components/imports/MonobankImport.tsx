@@ -1,7 +1,7 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 import { endOfDay, format, startOfDay, startOfMonth, subMonths } from "date-fns";
-import { uk } from "date-fns/locale";
+import { uk } from "date-fns/locale/uk"; // one locale, not the barrel with all 90+
 import type { DateRange } from "react-day-picker";
 import {
   AlertCircle,
@@ -32,12 +32,6 @@ import { creditLine, formatMoney } from "@/lib/banks";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 import { useDashboardStore } from "@/stores/dashboard-store";
-
-export const Route = createFileRoute("/import/monobank")({
-  validateSearch: (search: Record<string, unknown>): { account?: string } =>
-    typeof search.account === "string" ? { account: search.account } : {},
-  component: MonobankImport,
-});
 
 type Job = {
   account_id: string;
@@ -117,8 +111,7 @@ function Choice({ checked, onSelect, icon, title, children }: { checked: boolean
   );
 }
 
-function MonobankImport() {
-  const { account: preselected } = Route.useSearch();
+export function MonobankImport({ preselected }: { preselected?: string }) {
   const user = useAuthStore((state) => state.user);
   const initialized = useAuthStore((state) => state.initialized);
   const localAccounts = useDashboardStore((state) => state.accounts);

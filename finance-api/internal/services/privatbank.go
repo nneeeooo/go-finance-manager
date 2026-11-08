@@ -14,13 +14,23 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-// PrivatbankRow: one operation from a PrivatBank statement export (.xlsx, Privat24 «Виписка»)
-type PrivatbankRow struct {
+// StatementRow: one operation of a bank statement export (.xlsx): PrivatBank (Privat24 «Виписка») or VST Bank
+type StatementRow struct {
 	Date        time.Time `json:"date"`
 	Category    string    `json:"category"`
 	Description string    `json:"description"`
 	Amount      int64     `json:"amount"` // minor units, negative = spent
 	Currency    string    `json:"currency"`
+	Balance     int64     `json:"balance"`     // card balance after this operation (column «Залишок на кінець періоду»), minor units
+	HasBalance  bool      `json:"has_balance"` // false when the statement has no balance column or the cell is empty
+	MCC         uint16    `json:"-"`           // 0: the bank's statement has none
+	Ref         string    `json:"-"`           // the bank's own operation code, when the statement has one: keeps lookalike lines apart
+}
+
+// Statement: what a statement file holds besides its operations
+type Statement struct {
+	Rows        []StatementRow
+	CreditLimit *int64 // minor units, when the statement states the card's limit
 }
 
 // privatbankMCC: the statement has no MCC; the importer always used this one
@@ -31,7 +41,7 @@ var privatbankCurrencies = map[string]uint16{"UAH": 980, "USD": 840, "EUR": 978,
 
 // ParsePrivatbankXLSX reads the statement: two header rows, then date (col A), category (B), description (D),
 // card amount (E) and card currency (H). Rows with fewer columns are skipped; a bad date or amount stops with the row number.
-func ParsePrivatbankXLSX(r io.Reader) ([]PrivatbankRow, error) {
+func ParsePrivatbankXLSX(r io.Reader) ([]StatementRow, error) {
 	file, err := excelize.OpenReader(r)
 	if err != nil {
 		return nil, fmt.Errorf("not an xlsx file: %w", err)
@@ -46,7 +56,7 @@ func ParsePrivatbankXLSX(r io.Reader) ([]PrivatbankRow, error) {
 		return nil, fmt.Errorf("the statement has no operations")
 	}
 
-	var out []PrivatbankRow
+	var out []StatementRow
 	for i, row := range rows[2:] {
 		line := i + 3
 		if len(row) < 8 {
@@ -68,13 +78,21 @@ func ParsePrivatbankXLSX(r io.Reader) ([]PrivatbankRow, error) {
 		if _, ok := privatbankCurrencies[currency]; !ok {
 			return nil, fmt.Errorf("row %d: unknown currency %q", line, currency)
 		}
-		out = append(out, PrivatbankRow{
+		pr := StatementRow{
 			Date:        date,
 			Category:    strings.TrimSpace(row[1]),
 			Description: strings.TrimSpace(row[3]),
 			Amount:      int64(math.Round(amount * 100)),
 			Currency:    currency,
-		})
+		}
+		if len(row) > 8 && strings.TrimSpace(row[8]) != "" {
+			bal, err := strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(row[8]), ",", "."), 64)
+			if err != nil {
+				return nil, fmt.Errorf("row %d: balance %q", line, row[8])
+			}
+			pr.Balance, pr.HasBalance = int64(math.Round(bal*100)), true
+		}
+		out = append(out, pr)
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("the statement has no operations")
@@ -84,7 +102,7 @@ func ParsePrivatbankXLSX(r io.Reader) ([]PrivatbankRow, error) {
 
 // PrivatbankTransaction: the transaction row for one statement line. The id is deterministic (same formula as the
 // CLI importer), so importing an overlapping statement again adds only the new lines.
-func PrivatbankTransaction(accountID uuid.UUID, row PrivatbankRow) models.Transaction {
+func PrivatbankTransaction(accountID uuid.UUID, row StatementRow) models.Transaction {
 	// The id hashes the statement's wall-clock time written as UTC, as before dates were read in Kyiv time,
 	// so operations imported earlier keep their ids
 	d := row.Date
@@ -95,6 +113,7 @@ func PrivatbankTransaction(accountID uuid.UUID, row PrivatbankRow) models.Transa
 		AccountID:   accountID,
 		BankID:      models.BankPrivatBank,
 		Amount:      row.Amount,
+		Balance:     row.Balance,
 		Currency:    privatbankCurrencies[row.Currency],
 		MCC:         privatbankMCC,
 		Category:    row.Category,

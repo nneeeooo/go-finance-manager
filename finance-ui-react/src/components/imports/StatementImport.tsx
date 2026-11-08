@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, FileSpreadsheet, Loader2, Upload } from "lucide-react";
 
@@ -16,24 +16,25 @@ import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
 import { useDashboardStore } from "@/stores/dashboard-store";
 
-export const Route = createFileRoute("/import/privatbank")({
-  validateSearch: (search: Record<string, unknown>): { account?: string } =>
-    typeof search.account === "string" ? { account: search.account } : {},
-  component: PrivatbankImport,
-});
-
 type Row = { date: string; category: string; description: string; amount: number; currency: string };
 type Result = { total: number; new: number; dry_run: boolean; from: string; to: string; preview: Row[] };
 
 const CURRENCY_NUMBER: Record<string, number> = { UAH: 980, USD: 840, EUR: 978, PLN: 985 };
 const day = (iso: string) => new Date(iso).toLocaleDateString("uk-UA");
 
-function PrivatbankImport() {
-  const { account: preselected } = Route.useSearch();
+// The banks whose statements are uploaded as .xlsx (bank ids as the API stores them)
+const KINDS = {
+  2: { name: "PrivatBank", endpoint: "/imports/privatbank", help: "Privat24 → Card → Statement → Excel (.xlsx)." },
+  5: { name: "Власний Рахунок", endpoint: "/imports/vstbank", help: "Download the «Виписка по рахунку» as Excel (.xlsx). It also sets the card's credit limit and balance." },
+} as const;
+export type StatementBank = keyof typeof KINDS;
+
+export function StatementImport({ bank, preselected }: { bank: StatementBank; preselected?: string }) {
+  const kind = KINDS[bank];
   const user = useAuthStore((state) => state.user);
   const initialized = useAuthStore((state) => state.initialized);
   const allAccounts = useDashboardStore((state) => state.accounts);
-  const accounts = useMemo(() => allAccounts.filter((a) => a.bank === 2), [allAccounts]);
+  const accounts = useMemo(() => allAccounts.filter((a) => a.bank === bank), [allAccounts, bank]);
   const fetchAccounts = useDashboardStore((state) => state.fetchAccounts);
   const resetTransactions = useDashboardStore((state) => state.resetTransactions);
 
@@ -62,7 +63,7 @@ function PrivatbankImport() {
     for (const f of files) form.append("file", f); // overlapping statements count each operation once
     setBusy(true);
     setError(null);
-    const response = await apiFetch(`/imports/privatbank${dryRun ? "?dry_run=true" : ""}`, { method: "POST", body: form });
+    const response = await apiFetch(`${kind.endpoint}${dryRun ? "?dry_run=true" : ""}`, { method: "POST", body: form });
     setBusy(false);
     if (!response.ok) {
       setError(await apiError(response));
@@ -82,16 +83,16 @@ function PrivatbankImport() {
   if (!user) return <LoginRequired />;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pb-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pb-4 [&>*]:shrink-0">
       <PageHeader
-        title="Import PrivatBank statement"
-        description="Privat24 → Card → Statement → Excel (.xlsx). Pick one or several files; operations already imported are skipped."
+        title={`Import ${kind.name} statement`}
+        description={`${kind.help} Pick one or several files; operations already imported are skipped.`}
       />
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <BankBadge bank={2} className="size-7" />
+            <BankBadge bank={bank} className="size-7" />
             Statement
           </CardTitle>
           <CardDescription>Choose the account the statement belongs to, then the file.</CardDescription>
@@ -109,7 +110,7 @@ function PrivatbankImport() {
             />
             {accounts.length === 0 && (
               <Link to="/accounts" className="text-xs text-muted-foreground underline">
-                Add a PrivatBank account first
+                Add a {kind.name} account first
               </Link>
             )}
           </div>

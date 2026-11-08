@@ -11,10 +11,11 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountsRouteImport } from './routes/accounts'
+import { Route as GraceRouteImport } from './routes/grace'
+import { Route as ImportRouteImport } from './routes/import'
+import { Route as LoansRouteImport } from './routes/loans'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as UserRouteImport } from './routes/user'
-import { Route as ImportMonobankRouteImport } from './routes/import.monobank'
-import { Route as ImportPrivatbankRouteImport } from './routes/import.privatbank'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -24,6 +25,21 @@ const IndexRoute = IndexRouteImport.update({
 const AccountsRoute = AccountsRouteImport.update({
   id: '/accounts',
   path: '/accounts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GraceRoute = GraceRouteImport.update({
+  id: '/grace',
+  path: '/grace',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ImportRoute = ImportRouteImport.update({
+  id: '/import',
+  path: '/import',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoansRoute = LoansRouteImport.update({
+  id: '/loans',
+  path: '/loans',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -36,76 +52,61 @@ const UserRoute = UserRouteImport.update({
   path: '/user',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ImportMonobankRoute = ImportMonobankRouteImport.update({
-  id: '/import/monobank',
-  path: '/import/monobank',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ImportPrivatbankRoute = ImportPrivatbankRouteImport.update({
-  id: '/import/privatbank',
-  path: '/import/privatbank',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
+  '/grace': typeof GraceRoute
+  '/import': typeof ImportRoute
+  '/loans': typeof LoansRoute
   '/settings': typeof SettingsRoute
   '/user': typeof UserRoute
-  '/import/monobank': typeof ImportMonobankRoute
-  '/import/privatbank': typeof ImportPrivatbankRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
+  '/grace': typeof GraceRoute
+  '/import': typeof ImportRoute
+  '/loans': typeof LoansRoute
   '/settings': typeof SettingsRoute
   '/user': typeof UserRoute
-  '/import/monobank': typeof ImportMonobankRoute
-  '/import/privatbank': typeof ImportPrivatbankRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
+  '/grace': typeof GraceRoute
+  '/import': typeof ImportRoute
+  '/loans': typeof LoansRoute
   '/settings': typeof SettingsRoute
   '/user': typeof UserRoute
-  '/import/monobank': typeof ImportMonobankRoute
-  '/import/privatbank': typeof ImportPrivatbankRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | '/'
-    | '/accounts'
-    | '/settings'
-    | '/user'
-    | '/import/monobank'
-    | '/import/privatbank'
+    '/' | '/accounts' | '/grace' | '/import' | '/loans' | '/settings' | '/user'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
-    | '/accounts'
-    | '/settings'
-    | '/user'
-    | '/import/monobank'
-    | '/import/privatbank'
+    '/' | '/accounts' | '/grace' | '/import' | '/loans' | '/settings' | '/user'
   id:
     | '__root__'
     | '/'
     | '/accounts'
+    | '/grace'
+    | '/import'
+    | '/loans'
     | '/settings'
     | '/user'
-    | '/import/monobank'
-    | '/import/privatbank'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountsRoute: typeof AccountsRoute
+  GraceRoute: typeof GraceRoute
+  ImportRoute: typeof ImportRoute
+  LoansRoute: typeof LoansRoute
   SettingsRoute: typeof SettingsRoute
   UserRoute: typeof UserRoute
-  ImportMonobankRoute: typeof ImportMonobankRoute
-  ImportPrivatbankRoute: typeof ImportPrivatbankRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -124,6 +125,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/grace': {
+      id: '/grace'
+      path: '/grace'
+      fullPath: '/grace'
+      preLoaderRoute: typeof GraceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/import': {
+      id: '/import'
+      path: '/import'
+      fullPath: '/import'
+      preLoaderRoute: typeof ImportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/loans': {
+      id: '/loans'
+      path: '/loans'
+      fullPath: '/loans'
+      preLoaderRoute: typeof LoansRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -138,30 +160,17 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UserRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/import/monobank': {
-      id: '/import/monobank'
-      path: '/import/monobank'
-      fullPath: '/import/monobank'
-      preLoaderRoute: typeof ImportMonobankRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/import/privatbank': {
-      id: '/import/privatbank'
-      path: '/import/privatbank'
-      fullPath: '/import/privatbank'
-      preLoaderRoute: typeof ImportPrivatbankRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountsRoute: AccountsRoute,
+  GraceRoute: GraceRoute,
+  ImportRoute: ImportRoute,
+  LoansRoute: LoansRoute,
   SettingsRoute: SettingsRoute,
   UserRoute: UserRoute,
-  ImportMonobankRoute: ImportMonobankRoute,
-  ImportPrivatbankRoute: ImportPrivatbankRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -15,7 +15,7 @@ import { BANK_IDS, BANKS, CURRENCIES, bankName, creditLine, formatMoney, parseMo
 import { getCurrencySymbol } from "@/lib/chart-utils";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth-store";
-import { useDashboardStore } from "@/stores/dashboard-store";
+import { bankFilterOf, useDashboardStore } from "@/stores/dashboard-store";
 import type { Account } from "@/types";
 
 export const Route = createFileRoute("/accounts")({
@@ -138,7 +138,8 @@ function AccountView({ account, onChanged, onEdit }: { account: Account; onChang
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const importTo = account.bank === 1 ? "/import/monobank" : account.bank === 2 ? "/import/privatbank" : null;
+  const filter = bankFilterOf(account.bank);
+  const importBank = filter === "all" ? null : filter;
   const externalId = account.external_id || account.monobank_account_id;
 
   const remove = async () => {
@@ -216,8 +217,8 @@ function AccountView({ account, onChanged, onEdit }: { account: Account; onChang
           Operations
           <ArrowRight />
         </Button>
-        {importTo && (
-          <Link to={importTo} search={{ account: account.id }} className={buttonVariants({ variant: "ghost", size: "sm" })}>
+        {importBank && (
+          <Link to="/import" search={{ bank: importBank, account: account.id }} className={buttonVariants({ variant: "ghost", size: "sm" })}>
             <FileSpreadsheet />
             Import
           </Link>
@@ -348,7 +349,9 @@ function AddAccountCard({ onCreated }: { onCreated: () => void }) {
             ? "Monobank: the account id (from the Monobank API client-info) lets the app fetch statements and match webhooks."
             : bank === 2
               ? "PrivatBank: after creating it, import statement .xlsx files."
-              : "Track cash or another bank by hand."}
+              : bank === 5
+                ? "Власний Рахунок: after creating it, import the «Виписка по рахунку» .xlsx; it sets the credit limit and balance."
+                : "Track cash or another bank by hand."}
         </CardDescription>
       </CardHeader>
       <CardContent>

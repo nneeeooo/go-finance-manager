@@ -11,7 +11,7 @@ const api = "http://localhost:8080";
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
-    tanstackRouter(),
+    tanstackRouter({ autoCodeSplitting: true }), // each page loads its own libraries (charts, date picker) only when opened
     react(),
     tailwindcss(),
     babel({ presets: [reactCompilerPreset()] }),

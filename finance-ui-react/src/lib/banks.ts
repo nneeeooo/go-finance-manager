@@ -6,6 +6,7 @@ export const BANKS = {
   2: { name: "PrivatBank", short: "P24", className: "bg-emerald-600 text-white ring-emerald-500" },
   3: { name: "Cash", short: "₴", className: "bg-amber-500 text-white ring-amber-400" },
   4: { name: "Other", short: "•", className: "bg-slate-500 text-white ring-slate-400" },
+  5: { name: "Власний Рахунок", short: "ВР", className: "bg-violet-600 text-white ring-violet-500" },
 } as const;
 
 export type BankId = keyof typeof BANKS;

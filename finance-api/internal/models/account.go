@@ -14,6 +14,7 @@ const (
 	BankPrivatBank Bank = 2
 	BankCash       Bank = 3
 	BankOther      Bank = 4
+	BankVSTBank    Bank = 5 // АТ «ВСТ БАНК», «Банк Власний Рахунок»
 )
 
 type Account struct {

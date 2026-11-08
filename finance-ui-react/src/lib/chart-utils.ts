@@ -1,6 +1,6 @@
 import mcc from "mcc";
 import currencyCodes from "currency-codes";
-import type { BankFilter } from "@/stores/dashboard-store";
+import { BANK_FILTER_IDS, type BankFilter } from "@/stores/dashboard-store";
 import type { ChartMode, Transaction } from "@/types";
 
 export interface PeriodFilter {
@@ -47,6 +47,7 @@ export const BANK_ITEMS: { label: string; value: BankFilter }[] = [
   { label: "All banks", value: "all" },
   { label: "Monobank", value: "monobank" },
   { label: "PrivatBank", value: "privatbank" },
+  { label: "Власний Рахунок", value: "vstbank" },
 ];
 
 export function formatCurrency(amount: number): string {
@@ -66,8 +67,7 @@ export function filterTransactionsBySelection(
       return tx.account_id === selectedAccountId;
     }
     if (bank !== "all") {
-      const targetBankId = bank === "monobank" ? 1 : 2;
-      return tx.bank_id === targetBankId;
+      return tx.bank_id === BANK_FILTER_IDS[bank];
     }
     return true;
   });
@@ -253,18 +253,22 @@ export function getCurrencySymbol(currencyNumber: number): string {
 export interface CurrencySummary {
   currency: number;
   symbol: string;
-  balance: number;
   income: number;
   expenses: number;
 }
 
+/** PrivatBank's category for a move between the user's own cards: money did not come in or go out */
+const OWN_TRANSFER_CATEGORY = "Переказ на свою картку";
+export const isOwnTransfer = (tx: Transaction) => tx.category === OWN_TRANSFER_CATEGORY;
+
+/** Income and expenses per currency; moves between own cards are left out */
 export function calculateSummaryByCurrency(transactions: Transaction[]): CurrencySummary[] {
-  const groups = new Map<number, { balance: number; income: number; expenses: number }>();
+  const groups = new Map<number, { income: number; expenses: number }>();
 
   for (const tx of transactions) {
+    if (isOwnTransfer(tx)) continue;
     const curr = tx.currency || 980;
-    const entry = groups.get(curr) ?? { balance: 0, income: 0, expenses: 0 };
-    entry.balance += tx.amount;
+    const entry = groups.get(curr) ?? { income: 0, expenses: 0 };
     if (tx.amount > 0) {
       entry.income += tx.amount;
     } else {
@@ -277,7 +281,6 @@ export function calculateSummaryByCurrency(transactions: Transaction[]): Currenc
     .map(([curr, data]) => ({
       currency: curr,
       symbol: getCurrencySymbol(curr),
-      balance: data.balance / 100,
       income: data.income / 100,
       expenses: data.expenses / 100,
     }))
