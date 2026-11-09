@@ -10,10 +10,11 @@ export const Route = createRootRoute({
   component: Root,
 });
 
-function NavLink({ to, children }: { to: string; children: ReactNode }) {
+function NavLink({ to, label, children }: { to: string; label: string; children: ReactNode }) {
   return (
     <Link
       to={to}
+      aria-label={label}
       activeOptions={{ exact: to === "/" }}
       className={buttonVariants({ variant: "ghost", size: "sm" })}
       activeProps={{ className: buttonVariants({ variant: "secondary", size: "sm" }) }}
@@ -32,36 +33,36 @@ function Root() {
 
   return (
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
-      <div className="flex h-dvh w-dvw flex-col gap-3 p-4">
+      <div className="flex h-dvh w-dvw flex-col gap-3 p-2 sm:p-4">
         <nav className="flex flex-wrap items-center gap-1 border-b pb-3">
-          <NavLink to="/">
+          <NavLink to="/" label="Dashboard">
             <LayoutDashboard />
-            Dashboard
+            <span className="hidden sm:inline">Dashboard</span>
           </NavLink>
-          <NavLink to="/accounts">
+          <NavLink to="/accounts" label="Accounts">
             <Wallet />
-            Accounts
+            <span className="hidden sm:inline">Accounts</span>
           </NavLink>
-          <NavLink to="/import">
+          <NavLink to="/import" label="Import">
             <FileSpreadsheet />
-            Import
+            <span className="hidden sm:inline">Import</span>
           </NavLink>
-          <NavLink to="/loans">
+          <NavLink to="/loans" label="Loans">
             <Landmark />
-            Loans
+            <span className="hidden sm:inline">Loans</span>
           </NavLink>
-          <NavLink to="/grace">
+          <NavLink to="/grace" label="Grace period">
             <CalendarClock />
-            Grace period
+            <span className="hidden sm:inline">Grace period</span>
           </NavLink>
           <span className="ml-auto flex gap-1">
-            <NavLink to="/settings">
+            <NavLink to="/settings" label="Settings">
               <Settings />
-              Settings
+              <span className="hidden sm:inline">Settings</span>
             </NavLink>
-            <NavLink to="/user">
+            <NavLink to="/user" label="User">
               <UserRound />
-              User
+              <span className="hidden sm:inline">User</span>
             </NavLink>
           </span>
         </nav>

@@ -31,12 +31,14 @@ function Home() {
   }
 
   return (
-    <>
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
       <FinanceChart transactions={transactions} />
 
-      <div className="rounded-lg border min-h-0 flex-1">
-        <TransactionsTable transactions={transactions} />
+      <div className="min-h-96 flex-1 overflow-x-auto rounded-lg border">
+        <div className="h-full min-w-[46rem]">
+          <TransactionsTable transactions={transactions} />
+        </div>
       </div>
-    </>
+    </div>
   );
 }
