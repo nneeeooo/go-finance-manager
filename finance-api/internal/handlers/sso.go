@@ -66,7 +66,18 @@ func SSOCallback(c *gin.Context) {
 	cookie, _ := c.Cookie(sso.LoginCookie)
 	sso.ClearCookie(c.Writer, cfg, sso.LoginCookie, "/auth") // single use, whatever happens next
 	login, err := sso.OpenLoginState(cfg, cookie)
-	if err != nil || !sso.StateEqual(c.Query("state"), login.State) {
+	if err == nil && !sso.StateEqual(c.Query("state"), login.State) {
+		err = errors.New("state does not match the cookie")
+	}
+	if err != nil {
+		// Several cookies of this name (other paths) would shadow the right one: worth seeing in the log
+		n := 0
+		for _, ck := range c.Request.Cookies() {
+			if ck.Name == sso.LoginCookie {
+				n++
+			}
+		}
+		log.Printf("sso callback: invalid login state: %v (%s cookies: %d)", err, sso.LoginCookie, n)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid login state"})
 		return
 	}
