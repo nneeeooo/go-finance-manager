@@ -31,6 +31,9 @@ type Config struct {
 	AuthClientSecret  string
 	AuthRedirectURL   string
 	AuthPostLogoutURL string
+	// Optional back-channel base (e.g. http://auth-app:8090 on the podman network): discovery, token, JWKS,
+	// userinfo and revocation go there instead of the public issuer; the browser still uses the public URLs
+	AuthInternalURL string
 
 	MonobankApiUrl             string
 	MonobankToken              string
@@ -79,6 +82,7 @@ func Load(configPath string) *Config {
 		AuthClientSecret:           os.Getenv("AUTH_CLIENT_SECRET"),
 		AuthRedirectURL:            os.Getenv("AUTH_REDIRECT_URL"),
 		AuthPostLogoutURL:          os.Getenv("AUTH_POST_LOGOUT_URL"),
+		AuthInternalURL:            strings.TrimRight(os.Getenv("AUTH_INTERNAL_URL"), "/"),
 		MonobankApiUrl:             os.Getenv("MONOBANK_API_URL"),
 		MonobankRateLimitSeconds:   rateLimit,
 		MonobankToken:              os.Getenv("MONOBANK_TOKEN"),

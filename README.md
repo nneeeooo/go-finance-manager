@@ -92,6 +92,8 @@ The project includes ready-to-use Quadlet files in `deploy/quadlets/`:
    AUTH_CLIENT_SECRET=your_client_secret
    AUTH_REDIRECT_URL=https://finance.nneeeooo.pp.ua/auth/callback
    AUTH_POST_LOGOUT_URL=https://finance.nneeeooo.pp.ua/
+   # Back channel (token, JWKS, revocation) over the podman network, not through the public tunnel
+   AUTH_INTERNAL_URL=http://auth-app:8090
    ```
 3. Reload systemd:
    ```bash

@@ -52,22 +52,15 @@ func (c *Client) ensure(ctx context.Context) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	p, err := oidc.NewProvider(ctx, c.cfg.AuthIssuer)
+	p, endSession, revocation, err := discover(ctx, c.cfg.AuthIssuer, c.cfg.AuthInternalURL)
 	if err != nil {
 		return fmt.Errorf("%w: discovery: %v", ErrUpstream, err)
-	}
-	var extra struct {
-		EndSession string `json:"end_session_endpoint"`
-		Revocation string `json:"revocation_endpoint"`
-	}
-	if err := p.Claims(&extra); err != nil {
-		return fmt.Errorf("%w: discovery claims: %v", ErrUpstream, err)
 	}
 	ep := p.Endpoint()
 	ep.AuthStyle = oauth2.AuthStyleInHeader // client_secret_basic
 	c.provider = p
-	c.endSession = extra.EndSession
-	c.revocation = extra.Revocation
+	c.endSession = endSession
+	c.revocation = revocation
 	c.oauth = oauth2.Config{
 		ClientID:     c.cfg.AuthClientID,
 		ClientSecret: c.cfg.AuthClientSecret,
