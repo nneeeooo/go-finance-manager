@@ -40,7 +40,7 @@ func SSOLogin(c *gin.Context) {
 	}
 	returnTo := sso.SafeReturnTo(c.Query("return_to"))
 
-	target, err := client.AuthCodeURL(c.Request.Context(), state, nonce, verifier)
+	target, err := client.AuthCodeURL(c.Request.Context(), state, nonce, verifier, c.Query("provider"))
 	if err != nil {
 		log.Println("sso login:", err)
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Auth service unavailable"})

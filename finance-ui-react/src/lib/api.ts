@@ -17,8 +17,11 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
 }
 
 /** Full-page, same-tab navigation to the SSO login; the API sends the browser back to `returnTo` afterwards. */
-export function startLogin(returnTo: string = window.location.pathname + window.location.search) {
-  window.location.assign(`/auth/login?return_to=${encodeURIComponent(returnTo)}`);
+export function startLogin(
+  returnTo: string = window.location.pathname + window.location.search,
+  provider: "google" | "telegram" = "google",
+) {
+  window.location.assign(`/auth/login?provider=${provider}&return_to=${encodeURIComponent(returnTo)}`);
 }
 
 /** The API's error text ({"error": "..."}), else the HTTP status */

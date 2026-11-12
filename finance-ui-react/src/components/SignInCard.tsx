@@ -4,11 +4,12 @@ import { startLogin } from "@/lib/api";
 
 const ERRORS: Record<string, string> = {
   not_invited: "This Google account is not invited to Finance Manager.",
-  access_denied: "Sign-in was cancelled or denied.",
+  access_denied:
+    "Sign-in was cancelled or denied. A Telegram account works only after the admin links it to your invite.",
   login_failed: "Sign-in failed. Try again.",
 };
 
-/** The one way in: a full-page, same-tab trip through the SSO login, then back to this page */
+/** The way in: a full-page, same-tab trip through the SSO login (Google or Telegram), then back to this page */
 export function SignInCard() {
   const code = new URLSearchParams(window.location.search).get("auth_error");
 
@@ -21,8 +22,11 @@ export function SignInCard() {
         </CardHeader>
         <CardContent className="space-y-3">
           {code && <p className="text-sm text-destructive">{ERRORS[code] ?? ERRORS.login_failed}</p>}
-          <Button className="w-full" onClick={() => startLogin(window.location.pathname)}>
+          <Button className="w-full" onClick={() => startLogin(window.location.pathname, "google")}>
             Sign in with Google
+          </Button>
+          <Button variant="outline" className="w-full" onClick={() => startLogin(window.location.pathname, "telegram")}>
+            Sign in with Telegram
           </Button>
         </CardContent>
       </Card>

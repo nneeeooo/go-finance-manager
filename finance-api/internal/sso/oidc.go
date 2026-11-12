@@ -71,12 +71,17 @@ func (c *Client) ensure(ctx context.Context) error {
 	return nil
 }
 
-// AuthCodeURL: where to send the browser to log in
-func (c *Client) AuthCodeURL(ctx context.Context, state, nonce, verifier string) (string, error) {
+// AuthCodeURL: where to send the browser to log in. provider picks the upstream at auth ("google", "telegram");
+// anything else is left out and auth uses Google
+func (c *Client) AuthCodeURL(ctx context.Context, state, nonce, verifier, provider string) (string, error) {
 	if err := c.ensure(ctx); err != nil {
 		return "", err
 	}
-	return c.oauth.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier)), nil
+	opts := []oauth2.AuthCodeOption{oidc.Nonce(nonce), oauth2.S256ChallengeOption(verifier)}
+	if provider == "google" || provider == "telegram" {
+		opts = append(opts, oauth2.SetAuthURLParam("provider", provider))
+	}
+	return c.oauth.AuthCodeURL(state, opts...), nil
 }
 
 // Identity: what the verified id_token says about the user
