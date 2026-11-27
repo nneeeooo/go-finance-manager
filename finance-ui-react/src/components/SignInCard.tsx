@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+import { ProviderButtons } from "@/components/ui/provider-buttons";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { startLogin } from "@/lib/api";
 
@@ -22,12 +22,11 @@ export function SignInCard() {
         </CardHeader>
         <CardContent className="space-y-3">
           {code && <p className="text-sm text-destructive">{ERRORS[code] ?? ERRORS.login_failed}</p>}
-          <Button className="w-full" onClick={() => startLogin(window.location.pathname, "google")}>
-            Sign in with Google
-          </Button>
-          <Button variant="outline" className="w-full" onClick={() => startLogin(window.location.pathname, "telegram")}>
-            Sign in with Telegram
-          </Button>
+          <ProviderButtons
+            onSignIn={(p) => startLogin(window.location.pathname, p)}
+            google="Sign in with Google"
+            telegram="Sign in with Telegram"
+          />
         </CardContent>
       </Card>
     </div>
